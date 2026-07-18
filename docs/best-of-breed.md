@@ -4,27 +4,57 @@
 > opinionated framework, it lets you pick the patterns you want from each
 > existing framework and compose them.
 
+## The thesis
+
+> **The engine is fixed. The patterns are configurable.**
+
+Every other framework picks a philosophy and forces you into it. Anvil says:
+**pick the pieces that work for your use case, and Anvil glues them together
+with event sourcing and resumability as the foundation.**
+
+## The 10 orthogonal axes of agent design
+
+After studying 14 major frameworks (LangGraph, CrewAI, AutoGen, Pydantic AI,
+LlamaIndex, Mastra, Smolagents, OpenAI Swarm, Atomic Agents, DSPy, Guidance,
+Semantic Kernel, Haystack, Rivet), we identified 10 orthogonal design axes.
+Each is a plugin slot. Each framework's distinctive pattern becomes a
+concrete plugin.
+
+| # | Axis | What it controls |
+|---|---|---|
+| **A1** | **State model** | How state is persisted, checkpointed, replayed |
+| **A2** | **Control-flow shape** | Linear / DAG / cyclic graph / conversation |
+| **A3** | **Agent granularity** | Monolith / role-based team / atomic units |
+| **A4** | **Tool-call style** | JSON / code-as-action / grammar-constrained |
+| **A5** | **I/O contract** | String / Pydantic-typed / schema-chainable |
+| **A6** | **Prompt lifecycle** | Hand-written / templated / compiled by optimizer |
+| **A7** | **Handoff model** | None / return-an-agent / graph edge / group-chat |
+| **A8** | **Memory model** | Stateless / chat history / thread / vector store |
+| **A9** | **Determinism vs emergence** | Scripted / hybrid / emergent |
+| **A10** | **Distribution target** | Python-only / TS-only / language-portable |
+
+See [framework-analysis.md](framework-analysis.md) for the deep dive.
+
 ## What we steal from each framework
 
-| From | What we steal | How Anvil exposes it |
+| From | Pattern | How Anvil exposes it |
 |---|---|---|
-| **LangGraph** | Stateful graph execution with explicit checkpoints | `CheckpointPolicy` plugin |
-| **LangGraph** | Human-in-the-loop interrupts (`interrupt_before`, `interrupt_after`) | `Recovery` plugin: `WaitForHuman` |
-| **CrewAI** | Role-based agents (researcher, writer, reviewer) | `WithRoles(...)` config |
-| **CrewAI** | Task delegation with explicit `context` passing | `SubAgent.Task.Context` |
-| **AutoGen** | Conversational group chat between agents | `GroupChat` plugin |
-| **AutoGen** | Speaker selection (round-robin, manual, auto) | `WithSpeakerSelection(...)` |
-| **Pydantic AI** | Type-safe tool args with Pydantic-style validation | `Tool.Schema()` with validators |
-| **Pydantic AI** | Dependency injection (typed context into tools) | `Tool.Deps` field |
-| **LlamaIndex** | RAG as a first-class tool | `WithRAG(vectorStore)` |
-| **LlamaIndex** | Query engines with structured outputs | `Tool.Query` interface |
-| **Smolagents** | Code-as-action (agent writes Python, runs it) | `WithCodeExecution(sandbox)` |
-| **OpenAI Swarm** | Lightweight handoffs (one-shot function calls that pass control) | `Handoff` event type |
-| **Atomic Agents** | System prompt as code (template-able, composable) | `SystemPrompt.Template` |
-| **DSPy** | Compiled prompts (optimize over examples) | `WithDSPyOptimizer(optimizer)` |
-| **Guidance** | Token-level generation control (regex, JSON schema enforced) | `WithGuidedDecoding(schema)` |
-| **Semantic Kernel** | Enterprise plugin system (kernel, filters, planners) | `Filter` plugin pipeline |
-| **Haystack** | Pipeline composition (component graphs) | `Pipeline` builder |
+| **LangGraph** | Stateful graph + checkpointer + time-travel | `CheckpointPolicy` + `Engine` plugin |
+| **LangGraph** | Human-in-the-loop interrupts | `Recovery` = `RecoveryHumanLoop` |
+| **CrewAI** | Role+goal+backstory agents | `AgentFactory` plugin |
+| **CrewAI** | `allow_delegation` handoffs | `HandoffPolicy` plugin |
+| **AutoGen** | Group chat speaker selection | `HandoffPolicy` = AutoGen-style |
+| **Pydantic AI** | Type-safe tool args | `Contract` plugin |
+| **LlamaIndex** | RAG as a first-class tool | `Memory` plugin + `ToolSource` |
+| **Smolagents** | Code-as-action (agent writes code) | `ActionCodec` = CodeAgent + `Sandbox` |
+| **OpenAI Swarm** | Lightweight handoffs | `HandoffPolicy` = Swarm-style |
+| **Atomic Agents** | Atomic units with chained I/O | `Contract` plugin |
+| **DSPy** | Teleprompter-optimized prompts | `PromptCompiler` plugin |
+| **Guidance** | Token-level CFG/regex constraints | `ActionCodec` = grammar |
+| **Semantic Kernel** | Enterprise plugin pipeline + filters | `Filter` plugin |
+| **Haystack** | Typed-slot pipeline composition | `Engine` plugin |
+| **Rivet** | Visual graph editor + remote runtime | Companion app (not core) |
+| **Mastra** | Workflow + rewind (LangGraph for TS) | `Engine` plugin |
 
 ## What Anvil does better than all of them
 
@@ -33,110 +63,91 @@
 3. **Pluggable at every axis** — frameworks pick one philosophy and lock you in
 4. **Production-grade observability** — every event is replayable, queryable
 5. **Engine, not framework** — Anvil is the engine, the patterns are config
+6. **Canonical Run Record** — single audit log that works across all patterns
+7. **Language-portable** — plugins can be Go, Python, anything via RPC/WASM
+8. **Long-lived process model** — backpressure, signal handling, graceful shutdown
 
-## The 10 pluggable axes
+## The plugin pack roadmap
 
-### 1. LLM Router
-Default: stub. Plugins: Anthropic / OpenAI / Ollama / vLLM.
-**Decides:** model, prompt caching, streaming, tool-call format.
+Each pack is a separate Go module. Users import ONLY what they need:
 
-### 2. Tool Source
-Default: Go interface. Plugins: MCP server, OpenAPI, OpenAI function-calling.
-**Decides:** how tools are defined, discovered, executed.
+| Pack | Source | Implements |
+|---|---|---|
+| `anvil-langgraph-compat` | LangGraph | Checkpointer, cyclic-graph Engine |
+| `anvil-swarm-handoffs` | OpenAI Swarm | HandoffPolicy (return-an-agent) |
+| `anvil-creator` | CrewAI | AgentFactory, HandoffPolicy (delegation) |
+| `anvil-conversation` | AutoGen | Engine (group-chat), HandoffPolicy (manager) |
+| `anvil-typed` | Pydantic AI | Contract (Pydantic validation) |
+| `anvil-atomic` | Atomic Agents | AgentFactory (atomic I/O schemas) |
+| `anvil-rag` | LlamaIndex / Haystack | Memory (vector), Engine (typed multigraph) |
+| `anvil-workflow` | Mastra | Engine (suspend/resume/rewind) |
+| `anvil-code-agent` | Smolagents | ActionCodec (Python code + sandbox) |
+| `anvil-grammar` | Guidance | ActionCodec (regex/CFG/JSON-schema) |
+| `anvil-teleprompter` | DSPy | PromptCompiler (MIPRO/GEPA-style) |
+| `anvil-visual` | Rivet | Companion GUI that reads Anvil graph specs |
 
-### 3. Context Packer
-Default: 4-tier. Plugins: RAG-first, scratchpad-only, sliding-window.
-**Decides:** what the LLM sees at each step.
+## What the core must provide (the irreducible meta-framework)
 
-### 4. Planner
-Default: implicit (LLM decides each step). Plugins: explicit plan/track, ToT, ReAct, plan-and-execute.
-**Decides:** how the agent sequences actions.
+1. **Canonical Run Record** — every plugin writes `Run{ThreadID, Step, StateRef, Action, Observation, Cost, Tokens, Latency}`. Tools like `anvil replay` and `anvil inspect` work across patterns.
+2. **Event-sourced core loop** — every state change is an append-only event. Postgres is source of truth.
+3. **Checkpoint + resume** — load any checkpoint, continue. Idempotent tool calls.
+4. **Streaming channel** — raw events out. Plugins format (AG-UI, A2A, OpenAI).
+5. **gRPC/WASM plugin contract** — core stays small, plugins can be any language.
+6. **Backpressure + signal handling** — long-lived process model. Go's strength.
 
-### 5. Memory
-Default: scratchpad + recent. Plugins: long-term vector store, episodic, summarization-on-write.
-**Decides:** what gets remembered between sessions.
+## Anti-recommendations — what NOT to bake in
 
-### 6. Sub-agent Coordination
-Default: none. Plugins: CrewAI roles, AutoGen group chat, hierarchical.
-**Decides:** how multiple agents collaborate.
+- **Don't pick a control-flow default.** Ships the *empty* engine; user picks LangGraph / Haystack / Mastra style.
+- **Don't pick a state schema.** The contract is just `[]byte` plus a typed adapter per checkpointer.
+- **Don't pick an action representation as a default.** JSON works but it's a *choice*, not a mandate.
+- **Don't ship a teleprompter in core.** Cross-cutting; it's a `PromptCompiler` like any other.
+- **Don't try to be a UI.** Leave visualization to Rivet-style companion tools.
 
-### 7. Streamer
-Default: raw Event. Plugins: AG-UI, A2A, OpenAI streaming, custom JSON.
-**Decides:** how the outside world consumes the engine.
+## Reference architecture (a "best-of-breed" user story)
 
-### 8. Checkpoint Policy
-Default: every 5 steps. Plugins: on-tool-call, time-based, on-pause, never.
-**Decides:** resume granularity.
-
-### 9. Speculation
-Default: none. Plugins: speculative LLM, parallel tool dispatch.
-**Decides:** latency vs cost.
-
-### 10. Error Recovery
-Default: fail-stop. Plugins: retry-with-reflection, fall-through, human-in-loop.
-**Decides:** how the engine handles bad LLM calls / tool errors.
-
-## Code shape
+A research assistant that combines patterns from 5 frameworks:
 
 ```go
-type AgentConfig struct {
-    LLM       LLMRouter
-    Tools     ToolSource
-    Context   ContextPacker
-    Planner   Planner
-    Memory    Memory
-    Streamer  StreamFormatter
-    CP        CheckpointPolicy
-    Recovery  ErrorRecovery
-    Speakers  SpeakerSelection
-    Filters   []Filter
-}
+import (
+    "github.com/hamdisoudani/anvil"
+    anvil_creator "github.com/hamdisoudani/anvil-creator"      // CrewAI patterns
+    anvil_typed "github.com/hamdisoudani/anvil-typed"           // Pydantic patterns
+    anvil_code "github.com/hamdisoudani/anvil-code-agent"        // Smolagents patterns
+    anvil_workflow "github.com/hamdisoudani/anvil-workflow"    // Mastra patterns
+    anvil_rag "github.com/hamdisoudani/anvil-rag"               // LlamaIndex patterns
+    anvil_teleprompter "github.com/hamdisoudani/anvil-teleprompter" // DSPy patterns
+)
 
-func New(opts ...Option) *Agent {
-    cfg := defaultConfig()  // sensible defaults for every axis
-    for _, opt := range opts {
-        opt(&cfg)
-    }
-    return &Agent{cfg: cfg}
-}
-
-// Functional options
-func WithLLM(r LLMRouter) Option
-func WithMCP(endpoint string) Option
-func WithRAGMemory(store VectorStore) Option
-func WithCrewStyle() Option
-func WithGroupChat() Option
-func WithAGUI() Option
-func WithHumanInTheLoop() Option
-func WithCodeExecution(sandbox Executor) Option
-func WithDSPyOptimizer(opt Optimizer) Option
-func WithSpeculation() Option
+a := anvil.New(
+    // CrewAI-style: role+goal+backstory sub-agents
+    anvil_creator.WithRole("researcher", "Conduct thorough research", "PhD in CS"),
+    anvil_creator.WithRole("writer", "Write engaging content", "NYT bestseller"),
+    anvil_creator.WithRole("critic", "Tear arguments apart", "Stanford philosophy"),
+    
+    // Pydantic-style: type-safe tool args
+    anvil_typed.WithContract("SearchInput", SearchInputSchema{}),
+    anvil_typed.WithContract("BlogPost", BlogPostSchema{}),
+    
+    // Smolagents-style: data analyst writes code
+    anvil_code.WithCodeExecution(myPythonSandbox),
+    
+    // Mastra-style: outer workflow with suspend/resume
+    anvil_workflow.WithSuspend("human_approval"),
+    anvil_workflow.WithRewind("retry_from_step"),
+    
+    // LlamaIndex-style: RAG memory
+    anvil_rag.WithVectorStore(myQdrant),
+    
+    // DSPy-style: optimize the critic's prompt after 100 eval runs
+    anvil_teleprompter.WithOptimizer("GEPA", semanticF1),
+)
 ```
 
-## What gets built in v0.2 (the plugin MVP)
+Every one of these is a plugin. None of them is a framework lock-in.
 
-Pick the 3 that prove the pattern works:
-- **LLM router** (Anthropic) — proves we can swap LLMs
-- **MCP tool source** — proves we can use any tool ecosystem
-- **AG-UI streamer** — proves we can be the engine under any client
+**That's the meta-framework promise.**
 
-Then v0.3 adds:
-- CrewAI-style roles
-- AutoGen-style group chat
-- LlamaIndex-style RAG memory
+---
 
-Then v0.4 adds:
-- DSPy optimizer
-- Human-in-the-loop
-- Code-as-action (sandboxed)
-
-## Why this matters
-
-The agent space is fragmented. Every framework picks one philosophy and
-forces you into it. Anvil says: **the engine is fixed, the patterns are
-configurable**. You pick the pieces that work for your use case, and
-Anvil glues them together with event sourcing and resumability as the
-foundation.
-
-That's the bet: every team will eventually need resume + observability.
-The framework they picked will resist. Anvil won't.
+See [framework-analysis.md](framework-analysis.md) for the full 14-framework breakdown.
+See [plugin-architecture.md](plugin-architecture.md) for the axis-by-axis interface design.
