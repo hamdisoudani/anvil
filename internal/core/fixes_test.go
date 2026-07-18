@@ -165,3 +165,102 @@ func TestNoopLogger(t *testing.T) {
 	l.Warn("w", nil)
 	l.Error("e", nil)
 }
+
+// TestRunRecordStore verifies records are written and listed.
+func TestRunRecordStore(t *testing.T) {
+	store := NewInMemoryRunRecordStore()
+
+	rec1 := RunRecord{ThreadID: "t1", Step: 1, Action: Action{}}
+	rec2 := RunRecord{ThreadID: "t1", Step: 2, Action: Action{}}
+	rec3 := RunRecord{ThreadID: "t2", Step: 1, Action: Action{}}
+
+	store.Append(rec1)
+	store.Append(rec2)
+	store.Append(rec3)
+
+	list := mustList(t, store, "t1", 0)
+	if len(list) != 2 {
+		t.Errorf("expected 2 records for t1, got %d", len(list))
+	}
+
+	list2 := mustList(t, store, "t1", 2)
+	if len(list2) != 1 {
+		t.Errorf("expected 1 record with since=2, got %d", len(list2))
+	}
+
+	list3 := mustList(t, store, "t2", 0)
+	if len(list3) != 1 {
+		t.Errorf("expected 1 record for t2, got %d", len(list3))
+	}
+}
+
+func mustList(t *testing.T, s RunRecordStore, thread string, since int) []RunRecord {
+	t.Helper()
+	out, err := s.List(thread, since)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	return out
+}
+
+// TestSubAgentCoord_DispatchAndEmit verifies sub-agent events are emitted.
+func TestSubAgentCoord_DispatchAndEmit(t *testing.T) {
+	a := New(
+		WithEventStore(NewInMemoryEventStore()),
+		WithCheckpointStore(NewInMemoryCheckpointStore()),
+		WithCache(NewInMemoryCache()),
+		WithLLM(NewStubLLMRouter("sub-agent done")),
+		WithToolMap(DefaultTools()),
+	)
+	coord := NewInProcessSubAgentCoord(a)
+
+	sess, err := a.newSession(context.Background(), "test sub-agent")
+	if err != nil {
+		t.Fatalf("newSession: %v", err)
+	}
+	sub := sess.Stream("test")
+
+	handle, err := coord.Dispatch(context.Background(), sess, "researcher", "find bugs")
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	if handle.ID() == "" {
+		t.Error("expected non-empty handle ID")
+	}
+
+	// Wait for completion
+	result, err := coord.Await(context.Background(), handle)
+	if err != nil {
+		t.Fatalf("await: %v", err)
+	}
+	if result.Err != nil {
+		t.Errorf("sub-agent error: %v", result.Err)
+	}
+
+	// Drain events — should include EventSubagent with action=start and action=done
+	got := map[string]bool{}
+	timeout := time.After(2 * time.Second)
+loop:
+	for {
+		select {
+		case e, ok := <-sub.Channel():
+			if !ok {
+				break loop
+			}
+			if e.Type == EventSubagent {
+				if action, _ := e.Payload["action"].(string); action != "" {
+					got[action] = true
+				}
+			}
+		case <-timeout:
+			break loop
+		}
+	}
+
+	if !got["start"] {
+		t.Error("expected sub-agent 'start' event")
+	}
+	if !got["done"] {
+		t.Error("expected sub-agent 'done' event")
+	}
+}

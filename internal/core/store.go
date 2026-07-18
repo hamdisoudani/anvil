@@ -64,17 +64,18 @@ func (a *Agent) newSession(ctx context.Context, task string) (*Session, error) {
 			History:    []Message{{Role: "user", Content: task}},
 			UpdatedAt:  time.Now(),
 		},
-		cfg:    a.cfg,
-		subs:   make(map[*Sub]struct{}),
-		ctx:    ctx,
-		cancel: func() {},
-		store:  a.store,
-		cp:     a.cp,
-		cache:  a.cache,
-		router: a.router,
-		tools:  a.tools,
-		ctxMgr: NewContextManager(a.cfg.ContextMaxTokens),
-		writer: writer,
+		cfg:         a.cfg,
+		subs:        make(map[*Sub]struct{}),
+		ctx:         ctx,
+		cancel:      func() {},
+		store:       a.store,
+		cp:          a.cp,
+		cache:       a.cache,
+		router:      a.router,
+		tools:       a.tools,
+		ctxMgr:      NewContextManager(a.cfg.ContextMaxTokens),
+		writer:      writer,
+		recordStore: a.recordStore,
 		onSlowSubscriber: func(sub *Sub, e Event) {
 			// Stub: real impl would emit a metric, alert, or log
 			// when drops exceed a threshold per sub per minute.
@@ -107,6 +108,7 @@ func (a *Agent) loadSession(ctx context.Context, id uuid.UUID) (*Session, error)
 		tools:  a.tools,
 		ctxMgr: NewContextManager(a.cfg.ContextMaxTokens),
 		writer: writer,
+		recordStore: a.recordStore,
 		onSlowSubscriber: func(sub *Sub, e Event) {
 			// Same as newSession
 		},

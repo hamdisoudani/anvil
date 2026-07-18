@@ -3,6 +3,8 @@ package plugin
 import (
 	"context"
 	"time"
+
+	"github.com/hamdisoudani/anvil/internal/core"
 )
 
 // RunRecord is the canonical run record every plugin writes to.
@@ -13,18 +15,11 @@ import (
 // (LangGraph's thread state, AutoGen's transcript, Crew's memory).
 // Anvil picks one canonical shape so tools, profilers, and replays
 // work across patterns.
-type RunRecord struct {
-	ThreadID    string                 `json:"thread_id"`
-	Step        int                    `json:"step"`
-	StateRef    string                 `json:"state_ref"`    // pointer to checkpoint
-	Action      Action                 `json:"action"`
-	Observation map[string]interface{} `json:"observation,omitempty"`
-	Cost        float64                `json:"cost_usd"`
-	Tokens      TokenUsage             `json:"tokens"`
-	Latency     time.Duration          `json:"latency"`
-	PluginName  string                 `json:"plugin_name"`  // which slot/plugin handled this
-	Timestamp   time.Time              `json:"timestamp"`
-}
+//
+// The actual struct is in core (not plugin) to avoid import cycles.
+// This is a type alias so plugin users can still refer to core.RunRecord
+// as plugin.RunRecord.
+type RunRecord = core.RunRecord
 
 // ── Action Codec (A4 in the framework analysis) ────────────────────────
 

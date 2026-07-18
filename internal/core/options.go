@@ -61,6 +61,12 @@ func WithToolMap(tools map[string]Tool) AgentOption {
 	}
 }
 
+// WithRunRecordStore attaches a RunRecordStore. The engine writes
+// one RunRecord per step, making anvil replay / inspect possible.
+func WithRunRecordStore(s RunRecordStore) AgentOption {
+	return func(a *Agent) { a.recordStore = s }
+}
+
 // WithConfig overrides the agent config.
 func WithConfig(c Config) AgentOption {
 	return func(a *Agent) { a.cfg = c }

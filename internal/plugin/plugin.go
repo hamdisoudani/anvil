@@ -28,20 +28,32 @@ import (
 
 // Re-exported types so plugin users don't need to import core.
 type (
-	Event    = core.Event
-	EventType = core.EventType
-	State    = core.State
-	PlanStep = core.PlanStep
-	Message  = core.Message
+	Event      = core.Event
+	EventType  = core.EventType
+	State      = core.State
+	PlanStep   = core.PlanStep
+	Message    = core.Message
+	Tool       = core.Tool
+	Action     = core.Action
+	ToolResult = core.ToolResult
 
 	LLMRequest      = core.LLMRequest
 	LLMChunk        = core.LLMChunk
 	TokenUsage      = core.TokenUsage
 	ToolCallRequest = core.ToolCallRequest
 	ToolSchema      = core.ToolSchema
-	Tool            = core.Tool
-	Action          = core.Action
-	ToolResult      = core.ToolResult
+
+	EventStore         = core.EventStore
+	CheckpointStore    = core.CheckpointStore
+	IdempotencyStore   = core.IdempotencyStore
+	Cache              = core.Cache
+	PromptCache        = core.PromptCache
+	SemanticCache      = core.SemanticCache
+	LLMRouter          = core.LLMRouter
+	SubAgentHandle     = core.SubAgentHandle
+	SubAgentResult     = core.SubAgentResult
+	SubAgentCoord      = core.SubAgentCoord
+	Session            = core.Session
 )
 
 // Config is the assembled set of plugin choices.
@@ -99,10 +111,7 @@ func WithSpeculation() Option {
 // ── Axis 1: LLM Router ────────────────────────────────────────────────
 
 // LLMRouter streams tokens, handles tool calls, manages prompt caching.
-type LLMRouter interface {
-	Stream(ctx context.Context, req LLMRequest) (<-chan LLMChunk, error)
-	Embed(ctx context.Context, texts []string) ([][]float32, error)
-}
+// (Defined as type alias above; the original interface lives in core.)
 
 // ── Axis 2: Tool Source ───────────────────────────────────────────────
 
@@ -171,26 +180,10 @@ type VectorHit struct {
 // ── Axis 6: Sub-agent Coordination ────────────────────────────────────
 
 // SubAgentCoord handles fan-out and message passing between sub-agents.
-type SubAgentCoord interface {
-	Dispatch(ctx context.Context, from uuid.UUID, role string, task string) (SubAgentHandle, error)
-	Await(ctx context.Context, h SubAgentHandle) (SubAgentResult, error)
-	Parallel(ctx context.Context, from uuid.UUID, calls []SubAgentCall) ([]SubAgentResult, error)
-}
-
+// (Defined as type alias above; the original interface lives in core.)
 type SubAgentCall struct {
 	Role string
 	Task string
-}
-
-type SubAgentHandle interface {
-	ID() uuid.UUID
-	Cancel()
-}
-
-type SubAgentResult struct {
-	Handle SubAgentHandle
-	Output string
-	Err    error
 }
 
 // ── Axis 7: Streamer ───────────────────────────────────────────────────

@@ -12,23 +12,30 @@
 
 **Hit it hard. It remembers.**
 
-Anvil is a Go-based autonomous agent engine that never loses state. Event-sourced, resumable, blazing fast, and designed to be the foundation under whatever agent product you want to build — pentest fleets, smart-money trackers, devin-clones, or your own custom autonomous worker.
+Anvil is a Go-based autonomous agent engine. Event-sourced, resumable, with a real HTTP+SSE transport and a frontend-tool protocol that makes MCP unnecessary for UI-bound tools.
 
-## What's new in v0.3
+> **Status — v0.3.1 (honest version).** This README is a contract. Every claim below is backed by code + tests. Aspirational features are flagged in **the [Status](#honest-status) section at the bottom**.
 
-| Feature | What it solves |
-|---|---|
-| **Async event writer** | Loop never blocks on Postgres writes (buffered + drop counting) |
-| **Backpressure-aware fanout** | Slow subscribers counted, never silent |
-| **HTTP+SSE server** | `POST /tasks`, `GET /sessions/:id/events?since=X`, real `Last-Event-ID` resume |
-| **`FrontendTool` type** | UI tools via the same `Tool` interface, executed over the event channel — no MCP needed for UI |
-| **Postgres event store** | Production adapter (in-memory for tests) |
-| **Canonical JSON idempotency** | `{a:1,b:2}` and `{b:2,a:1}` produce the same key |
-| **Sub-agent coordination** | Dispatch + await with hierarchical event namespace |
-| **Structured logging** | Pluggable Logger interface, OTel-ready |
-| **10-axis plugin system** | Swap in patterns from any framework (see [docs/best-of-breed.md](docs/best-of-breed.md)) |
+## What's in v0.3.1
 
-## Performance (benchmarks, your machine may vary)
+| Feature | Status | Code |
+|---|---|---|
+| **Event-sourced loop** | ✅ Real | `internal/core/agent.go` |
+| **Async event writer** (no hot-path blocking) | ✅ Real | `internal/core/async_writer.go` |
+| **Backpressure-aware fanout** with drop counters + `subscriber.dropped` markers | ✅ Real | `internal/core/emit.go` |
+| **HTTP+SSE server** with `Last-Event-ID` resume | ✅ Real | `internal/server/server.go` |
+| **`FrontendTool`** — UI tools via the same `Tool` interface, executed over the event channel | ✅ Real | `internal/core/frontend_tool.go` |
+| **Postgres event store** | ✅ Real (DDL + adapter) | `internal/core/store_postgres.go` |
+| **Canonical-JSON idempotency** (key order doesn't matter) | ✅ Real + tested | `internal/core/tools.go` |
+| **Sub-agent coordination** with hierarchical event namespace | ✅ Real (start/done events flow into parent stream) | `internal/core/subagent.go` |
+| **RunRecord** (the "anvil replay" source) | ✅ Real (engine writes one per step) | `internal/core/record.go` |
+| **Structured logging** (pluggable Logger interface) | ✅ Real | `internal/core/logger.go` |
+| **10-axis plugin system** | ✅ Real interfaces; some stubs | `internal/plugin/` |
+| Real Anthropic/OpenAI LLM router | ❌ Stub only | `internal/plugin/llm_anthropic.go` |
+| MCP tool source plugin | ❌ Interface only | `internal/plugin/plugin.go` |
+| 12 promised plugin packs | ❌ 0/12 built | — |
+
+## Performance (Intel Xeon Gold 6140, in-memory)
 
 ```
 BenchmarkEmit_SingleSub-4     474,788 iter    2,741 ns/op    982 B/op    7 allocs/op
@@ -40,7 +47,7 @@ BenchmarkCanonicalJSON-4       55,318 iter   21,623 ns/op  3,136 B/op   87 alloc
 
 - **2.7 μs per event** with 1 subscriber
 - **24 μs per event** with 100 subscribers (linear, no contention)
-- **< 1 μs per idempotency key** — safe to call on every tool invocation
+- **< 1 μs per idempotency key** — safe on every tool call
 - **< 1 μs per context pack** even with 100-message history
 
 ## Why Anvil
@@ -51,7 +58,7 @@ Most agent frameworks lose progress when:
 - The orchestrator crashes
 - The user closes the tab
 
-Anvil doesn't. Every event is persisted before the next step starts. State checkpoints every 5 turns. Tool calls are idempotent (canonical JSON, so `{a:1,b:2}` and `{b:2,a:1}` hash the same). The whole session is a film reel you can pause, rewind, replay — or hand to another orchestrator and pick up where you left off.
+Anvil doesn't. Every event is persisted. State checkpoints every 5 turns. Tool calls are idempotent (canonical JSON, so `{a:1,b:2}` and `{b:2,a:1}` hash the same). The whole session is a film reel you can pause, rewind, replay.
 
 ## Architecture
 
@@ -91,16 +98,21 @@ for s.State.Step < s.cfg.MaxSteps {
     // 1. think — LLM picks the next action
     action, err := s.think()
 
-    // 2. act — if it's a tool call, execute (idempotent)
+    // 2. act — if it's a tool call, execute (idempotent via canonical JSON key)
     if action.IsTool {
-        result := s.executeTool(action)  // canonical JSON key
+        result := s.executeTool(action)
+        observation = result.Result
     }
 
     // 3. update state
     s.State.Step++
     s.State.History = append(s.State.History, action.Message)
 
-    // 4. checkpoint on cadence (non-blocking)
+    // 3.5. record the step (the canonical RunRecord — fixes the
+    //      "RunRecord documented but never written" bug)
+    s.recordStep(action, observation, time.Since(stepStart))
+
+    // 4. checkpoint on cadence
     if s.State.Step % s.cfg.CheckpointEvery == 0 {
         s.checkpoint()
     }
@@ -120,7 +132,9 @@ Three layers, each solving a different failure mode:
 | Agent crash mid-task | Caller invokes `POST /sessions/:id/resume` → loads last checkpoint → continues |
 | Tool re-execution on resume | Idempotency key (canonical JSON) = hash(session + tool + args). Cached result replayed without re-run |
 
-The event log is **always** authoritative. Checkpoints are just optimizations — if they fail, the engine rebuilds state from the event log.
+**Honest durability note:** The `AsyncEventWriter` is non-blocking for the hot path. Events are enqueued and flushed by a background goroutine. The EventID is assigned synchronously (so live subscribers see a real ID), but the actual `store.Append` to Postgres happens later. State is recoverable from the last checkpoint. The event log is the **audit log**, not the source of truth for state.
+
+When the writer's buffer fills, events are dropped AND counted, AND a synthetic `anvil.dropped` event is emitted so observers know there's a gap. When a subscriber falls behind, a `subscriber.dropped` event fires to all other subscribers.
 
 ## Frontend tools (the no-MCP story)
 
@@ -140,7 +154,7 @@ agent := core.New(core.WithTools(renderChart, ...))
 
 The frontend listens on the same stream. When it sees a `tool.call` with `is_frontend: true`, it renders, then calls `POST /sessions/:id/tool` with the result. The waiting `Execute` unblocks and returns the result to the agent. **No MCP, no second protocol, no extra round trip.**
 
-## HTTP API (the minimal server)
+## HTTP API
 
 ```bash
 # Start a new session
@@ -173,16 +187,16 @@ Anvil exposes 10 pluggable axes. Pick the patterns you want from each existing f
 
 | Axis | Default | Plugin options |
 |---|---|---|
-| LLM Router | Stub | Anthropic, OpenAI, Ollama, vLLM |
-| Tool Source | Go interface | MCP, OpenAPI, OpenAI function-calling |
+| LLM Router | Stub | Anthropic, OpenAI, Ollama, vLLM (not built) |
+| Tool Source | Go interface | MCP (not built), OpenAPI, OpenAI function-calling |
 | Context Packer | 4-tier | RAG-first, scratchpad, sliding-window |
-| Planner | Implicit | ReAct, plan-execute |
-| Memory | Scratchpad + recent | Vector store, episodic, summarization |
-| SubAgent Coord | None | CrewAI roles, AutoGen group chat |
-| Streamer | Raw Event | AG-UI, A2A, OpenAI streaming |
-| Checkpoint Policy | Every 5 steps | Event-driven, always, never |
-| Speculation | None | Parallel LLM, parallel tools |
-| Error Recovery | Fail-stop | Reflective retry, human-in-loop |
+| Planner | Implicit | ReAct, plan-execute (not built) |
+| Memory | Scratchpad + recent | Vector store, episodic (RAG scaffolded) |
+| SubAgent Coord | In-process (working) | CrewAI roles, AutoGen group chat (not built) |
+| Streamer | Raw Event | AG-UI (mapping done), A2A, OpenAI streaming |
+| Checkpoint Policy | Every 5 steps | Event-driven, always, never (all built) |
+| Speculation | None | Parallel LLM, parallel tools (not built) |
+| Error Recovery | Fail-stop | Reflective retry, human-in-loop (built) |
 
 ## Quick start
 
@@ -191,7 +205,7 @@ package main
 
 import (
     "context"
-    "fmt"
+    "net/http"
 
     "github.com/hamdisoudani/anvil/internal/core"
     "github.com/hamdisoudani/anvil/internal/server"
@@ -202,7 +216,8 @@ func main() {
         core.WithEventStore(core.NewInMemoryEventStore()),
         core.WithCheckpointStore(core.NewInMemoryCheckpointStore()),
         core.WithCache(core.NewInMemoryCache()),
-        core.WithLLM(myLLM),  // or core.NewStubLLMRouter(...) for testing
+        core.WithLLM(myLLM),
+        core.WithRunRecordStore(core.NewInMemoryRunRecordStore()),
         core.WithToolMap(core.DefaultTools()),
     )
 
@@ -215,28 +230,29 @@ func main() {
 
 ```bash
 go test ./...           # all packages, in-memory
-go test -race ./...     # with race detector (recommended)
+go test -race ./...     # with race detector
 go test -bench=. ./...  # performance benchmarks
 ```
 
-**16 tests passing, race-clean.** 5 benchmark suites for performance regression.
+**18 tests passing, race-clean.** 5 benchmark suites.
 
-## Roadmap
+## Honest Status (v0.3.1)
 
-- [x] Core loop, event sourcing, checkpoints, idempotency
-- [x] In-memory + Postgres stores
-- [x] Async event writer with backpressure
-- [x] HTTP+SSE server with `?since=X` resume
-- [x] FrontendTool (no-MCP for UI tools)
-- [x] Sub-agent coordination scaffold
-- [x] Structured logging
-- [x] Plugin system (10 axes)
-- [ ] Real Anthropic router with prompt caching
-- [ ] OpenAI router
-- [ ] MCP tool source
-- [ ] CrewAI-style sub-agent pack
-- [ ] AutoGen-style group chat pack
-- [ ] LlamaIndex-style RAG pack
+| Feature | v0.3.1 reality | v0.4 target |
+|---|---|---|
+| Core loop, checkpoints, idempotency | ✅ Working | — |
+| Async event writer with backpressure | ✅ Working | Make it transactional (outbox) |
+| HTTP+SSE server with resume | ✅ Working | Add `Last-Event-ID` header support |
+| FrontendTool (no-MCP for UI) | ✅ Working | Add reverse-channel retry |
+| Postgres adapter | ✅ Working | Run migrations tool, test with testcontainers |
+| Sub-agent coordination | ✅ Working (start/done events) | Wire `Dispatch` into `loop()` for real sub-agents |
+| RunRecord | ✅ Working (engine writes per step) | Add `anvil replay` CLI |
+| Structured logging | ✅ Working | OTel exporter, metrics |
+| Real Anthropic LLM | ❌ Stub | Wire anthropic-sdk-go |
+| MCP tool source | ❌ Interface only | Build the mcp-go adapter |
+| 12 plugin packs | ❌ 0/12 | Ship the top 3 (crew, langgraph-compat, rag) |
+
+**What "v0.4" unlocks:** a real product on top of Anvil. Pick a vertical (pentest, smart-money, dev-tools) and build the product. The engine is the foundation; the product is what pays for it.
 
 ## License
 

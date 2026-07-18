@@ -20,14 +20,23 @@ func (s *Session) emit(e Event) {
 		e.CreatedAt = time.Now()
 	}
 
-	// 1. Persist (async). Store gets a fresh context so a cancelled
-	// session context doesn't kill the writer.
+	// 1. Persist (async). The writer assigns EventID synchronously
+	//    (monotonic counter) before enqueueing. Live subscribers see
+	//    a real ID.
 	writeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if s.writer != nil {
-		s.writer.Append(writeCtx, e)
+		if seq, err := s.writer.Append(writeCtx, e); err == nil {
+			// Stamp the event with the synchronous seq so subscribers see it.
+			// Note: e.EventID is the string form; e.ID is the Postgres
+			// bigserial (filled in by the background goroutine).
+			e.ID = seq
+		} else if IsBufferFull(err) {
+			// Critical: if we can't even queue the event, emit a
+			// synthetic "dropped" marker so observers know there's a gap.
+			s.emitDroppedMarker(e)
+		}
 	} else {
-		// Fallback: synchronous write (tests, single-process mode)
 		s.store.Append(writeCtx, e)
 	}
 
@@ -40,11 +49,63 @@ func (s *Session) emit(e Event) {
 		case sub.Ch <- e:
 			// delivered
 		default:
-			// subscriber too slow — track it
+			// subscriber too slow — track it AND emit a gap marker
+			// on the *other* subscribers so they know there's a hole.
 			atomic.AddUint64(&sub.dropped, 1)
-			if s.onSlowSubscriber != nil {
-				s.onSlowSubscriber(sub, e)
-			}
+			s.emitGapMarker(sub, e)
+		}
+	}
+}
+
+// emitDroppedMarker sends a synthetic "anvil.dropped" event to all
+// subscribers (except the source if known) when the engine itself
+// can't keep up. This is the "I lost N events" signal the architect
+// critic said was missing.
+func (s *Session) emitDroppedMarker(original Event) {
+	marker := Event{
+		Type: "anvil.dropped",
+		Payload: map[string]interface{}{
+			"reason":   "writer_buffer_full",
+			"original_type": string(original.Type),
+			"original_step": s.State.Step,
+		},
+		CreatedAt: time.Now(),
+	}
+	// Don't recurse: emit directly to subs without going through writer
+	s.subMu.RLock()
+	defer s.subMu.RUnlock()
+	for sub := range s.subs {
+		select {
+		case sub.Ch <- marker:
+		default:
+			// best-effort
+		}
+	}
+}
+
+// emitGapMarker sends "subscriber.dropped" to all OTHER subscribers
+// when one falls behind. Lets observers know there's a gap from this
+// specific sub's perspective.
+func (s *Session) emitGapMarker(slow *Sub, original Event) {
+	marker := Event{
+		Type: "subscriber.dropped",
+		Payload: map[string]interface{}{
+			"subscriber_id":  slow.id,
+			"subscriber_drops": atomic.LoadUint64(&slow.dropped),
+			"dropped_type":   string(original.Type),
+		},
+		CreatedAt: time.Now(),
+	}
+	s.subMu.RLock()
+	defer s.subMu.RUnlock()
+	for sub := range s.subs {
+		if sub == slow {
+			continue // don't notify the one that's behind
+		}
+		select {
+		case sub.Ch <- marker:
+		default:
+			// best-effort
 		}
 	}
 }

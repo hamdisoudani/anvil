@@ -2,25 +2,28 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 )
 
-// SubAgentCoord handles dispatching tasks to sub-agents. Sub-agent events
-// are emitted in the same stream as the parent, with parent_step
-// metadata for hierarchical display.
-type SubAgentCoord interface {
-	// Dispatch launches a sub-agent and returns a handle. The sub-agent's
-	// events flow into the parent's stream with parent_step set.
-	Dispatch(ctx context.Context, sess *Session, role string, task string) (SubAgentHandle, error)
-	// Await blocks until the sub-agent completes.
-	Await(ctx context.Context, h SubAgentHandle) (SubAgentResult, error)
+// InProcessSubAgentCoord runs sub-agents as goroutines on the same
+// engine. The sub-agent's events flow into the parent's stream with
+// parent_step metadata, so a single SSE consumer sees the full hierarchy.
+//
+// This is the default. For distributed deployments, swap in a gRPC
+// or HTTP client that calls Run() on a remote engine.
+type InProcessSubAgentCoord struct {
+	agent  *Agent
+	mu     sync.Mutex
+	active map[string]*subAgentRun // keyed by handle.ID().String()
 }
 
 // SubAgentHandle is the handle for a running sub-agent.
 type SubAgentHandle interface {
-	ID() uuid.UUID
+	ID() string
 	Cancel()
 }
 
@@ -31,75 +34,138 @@ type SubAgentResult struct {
 	Err    error
 }
 
-// InProcessSubAgentCoord runs sub-agents as goroutines on the same
-// engine. This is the default; for distributed deployments, replace
-// with an HTTP/gRPC client.
-type InProcessSubAgentCoord struct {
-	mu      sync.Mutex
-	agents  map[uuid.UUID]*Agent
-	handles map[uuid.UUID]*inProcessHandle
+// SubAgentCoord handles dispatching tasks to sub-agents. Sub-agent
+// events are emitted in the same stream as the parent, with
+// parent_step metadata for hierarchical display.
+type SubAgentCoord interface {
+	Dispatch(ctx context.Context, sess *Session, role string, task string) (SubAgentHandle, error)
+	Await(ctx context.Context, h SubAgentHandle) (SubAgentResult, error)
 }
 
+type subAgentRun struct {
+	id     string
+	cancel context.CancelFunc
+	done   chan SubAgentResult
+}
+
+var subAgentCounter atomic.Uint64
+
+// newSubAgentID returns a unique id for a sub-agent.
+func newSubAgentID() string {
+	n := subAgentCounter.Add(1)
+	return fmt.Sprintf("sub-%d-%s", n, uuid.NewString()[:8])
+}
+
+// inProcessHandle is the handle for a running sub-agent.
 type inProcessHandle struct {
-	id      uuid.UUID
-	cancel  context.CancelFunc
-	done    chan SubAgentResult
-	events  *Sub // sub-agent's event stream
+	id     string
+	cancel context.CancelFunc
+	done   chan SubAgentResult
 }
 
-func (h *inProcessHandle) ID() uuid.UUID { return h.id }
+func (h *inProcessHandle) ID() string { return h.id }
 func (h *inProcessHandle) Cancel()      { h.cancel() }
 
-// NewInProcessSubAgentCoord returns a coord that runs sub-agents
-// in-process. For multi-process or distributed deployments, replace
-// with a gRPC or HTTP client.
-func NewInProcessSubAgentCoord() *InProcessSubAgentCoord {
+// NewInProcessSubAgentCoord creates a coord that runs sub-agents
+// in-process. Pass the parent's agent so sub-agents share its
+// LLM router, tools, and stores.
+func NewInProcessSubAgentCoord(agent *Agent) *InProcessSubAgentCoord {
 	return &InProcessSubAgentCoord{
-		agents:  make(map[uuid.UUID]*Agent),
-		handles: make(map[uuid.UUID]*inProcessHandle),
+		agent:  agent,
+		active: make(map[string]*subAgentRun),
 	}
 }
 
-// Dispatch spawns a sub-agent and starts its loop. Returns a handle
-// that can be awaited.
-//
-// Sub-agent events are emitted in the parent's stream with parent_step
-// metadata. The session also tracks active sub-agents so checkpoint
-// snapshots include them.
+// Dispatch spawns a sub-agent. Returns a handle. The sub-agent's
+// events are emitted in the parent's stream with parent_step set
+// and the "subagent.*" action tag in the payload so consumers can
+// distinguish them.
 func (c *InProcessSubAgentCoord) Dispatch(ctx context.Context, sess *Session, role, task string) (SubAgentHandle, error) {
-	subID := uuid.New()
+	subID := newSubAgentID()
 	subCtx, cancel := context.WithCancel(ctx)
 
-	// Sub-agent shares the parent's engine (router, tools, etc.)
-	c.mu.Lock()
-	// We don't have direct access to the parent's Agent here, but
-	// in practice you'd pass it. For now, stub: emit a sub-agent
-	// event and return a handle.
-	c.mu.Unlock()
-
-	// Emit the sub-agent start in the parent stream
+	// Emit sub-agent start in parent stream — SYNCHRONOUS so live
+	// subscribers see the event before the sub-agent starts working.
 	sess.emit(Event{
-		Type:      EventSubagent,
+		Type: EventSubagent,
 		Payload: map[string]interface{}{
-			"action":     "start",
-			"sub_id":     subID,
-			"role":       role,
-			"task":       task,
+			"action":      "start",
+			"sub_id":      subID,
+			"role":        role,
+			"task":        task,
 			"parent_step": sess.State.Step,
 		},
 	})
 
-	handle := &inProcessHandle{
+	done := make(chan SubAgentResult, 1)
+	run := &subAgentRun{
 		id:     subID,
 		cancel: cancel,
-		done:   make(chan SubAgentResult, 1),
+		done:   done,
 	}
+	c.mu.Lock()
+	c.active[subID] = run
+	c.mu.Unlock()
 
-	// Real implementation would spin up the sub-agent's loop and
-	// pipe its events into the parent's stream. Stub for now.
+	handle := &inProcessHandle{id: subID, cancel: cancel, done: done}
+
+	// Spawn the sub-agent's loop. We don't share the parent's session
+	// state (the sub-agent gets its own scratchpad, history, plan) but
+	// the sub-agent's events are emitted into the parent's stream via
+	// the parent step. This is the "sub-agents in the same stream"
+	// claim that was previously aspirational.
 	go func() {
-		<-subCtx.Done()
-		handle.done <- SubAgentResult{Handle: handle, Err: subCtx.Err()}
+		defer func() {
+			c.mu.Lock()
+			delete(c.active, subID)
+			c.mu.Unlock()
+		}()
+
+		// Build a sub-agent session
+		sub, err := c.agent.newSession(subCtx, fmt.Sprintf("[%s] %s", role, task))
+		if err != nil {
+			done <- SubAgentResult{Handle: handle, Err: err}
+			sess.emit(Event{
+				Type: EventSubagent,
+				Payload: map[string]interface{}{
+					"action":      "error",
+					"sub_id":      subID,
+					"error":       err.Error(),
+					"parent_step": sess.State.Step,
+				},
+			})
+			return
+		}
+
+		// Forward sub-agent events into the parent stream with parent_step
+		subSub := sub.Stream("forwarder-" + subID)
+		go func() {
+			for e := range subSub.Channel() {
+				// Re-emit in the parent stream with parent_step metadata
+				if e.Payload == nil {
+					e.Payload = map[string]interface{}{}
+				}
+				e.Payload["sub_id"] = subID
+				e.Payload["role"] = role
+				e.Payload["parent_step"] = sess.State.Step
+				sess.emit(e)
+			}
+		}()
+
+		// Run the sub-agent's loop
+		sub.loop()
+
+		// After loop exits, emit done marker
+		sess.emit(Event{
+			Type: EventSubagent,
+			Payload: map[string]interface{}{
+				"action":      "done",
+				"sub_id":      subID,
+				"parent_step": sess.State.Step,
+			},
+		})
+
+		done <- SubAgentResult{Handle: handle, Output: "sub-agent completed"}
 	}()
 
 	return handle, nil
@@ -109,7 +175,7 @@ func (c *InProcessSubAgentCoord) Dispatch(ctx context.Context, sess *Session, ro
 func (c *InProcessSubAgentCoord) Await(ctx context.Context, h SubAgentHandle) (SubAgentResult, error) {
 	ip, ok := h.(*inProcessHandle)
 	if !ok {
-		return SubAgentResult{}, nil
+		return SubAgentResult{Handle: h, Err: fmt.Errorf("unknown handle type")}, nil
 	}
 	select {
 	case r := <-ip.done:
@@ -118,6 +184,16 @@ func (c *InProcessSubAgentCoord) Await(ctx context.Context, h SubAgentHandle) (S
 		return SubAgentResult{Handle: h, Err: ctx.Err()}, ctx.Err()
 	}
 }
+
+// InFlight returns the number of sub-agents currently running.
+func (c *InProcessSubAgentCoord) InFlight() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.active)
+}
+
+// sync import alias
+var _ = (chan struct{})(nil)
 
 // Compile-time check
 var _ SubAgentCoord = (*InProcessSubAgentCoord)(nil)

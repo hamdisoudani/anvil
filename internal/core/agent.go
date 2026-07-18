@@ -96,6 +96,7 @@ type Session struct {
 	tools   map[string]Tool
 	ctxMgr  *ContextManager
 	writer  *AsyncEventWriter        // async event persistence
+	recordStore RunRecordStore        // canonical run records (the "anvil replay" source)
 	onSlowSubscriber func(sub *Sub, e Event) // hook for metrics
 	logger  Logger
 	done    chan struct{}
@@ -103,12 +104,13 @@ type Session struct {
 
 // Agent is the top-level engine. One per process, runs many sessions.
 type Agent struct {
-	store  EventStore
-	cache  Cache
-	router LLMRouter
-	tools  map[string]Tool
-	cfg    Config
-	cp     CheckpointStore
+	store       EventStore
+	cp          CheckpointStore
+	cache       Cache
+	router      LLMRouter
+	tools       map[string]Tool
+	cfg         Config
+	recordStore RunRecordStore
 }
 
 type Config struct {
@@ -187,6 +189,7 @@ func (s *Session) loop() {
 		s.mu.Unlock()
 
 		// 1. Think — ask LLM what to do next
+		stepStart := time.Now()
 		action, err := s.think()
 		if err != nil {
 			s.emit(Event{Type: EventError, Payload: map[string]interface{}{"err": err.Error()}})
@@ -195,11 +198,13 @@ func (s *Session) loop() {
 		}
 
 		// 2. Act — if a tool call, execute it (idempotent)
+		var observation interface{}
 		if action.IsTool() {
 			s.emit(Event{Type: EventToolCall, Payload: action.Event()})
 			result := s.executeTool(action)
 			s.emit(Event{Type: EventToolResult, Payload: result.Event()})
 			s.State.Scratchpad["last_observation"] = result
+			observation = result.Result
 		}
 
 		// 3. Update state
@@ -207,6 +212,10 @@ func (s *Session) loop() {
 		s.State.Step++
 		s.State.History = append(s.State.History, action.Message)
 		s.mu.Unlock()
+
+		// 3.5. Record the step (the canonical RunRecord — fixes the
+		//      "RunRecord was documented but never written" bug).
+		s.recordStep(action, observation, time.Since(stepStart))
 
 		// 4. Checkpoint on cadence
 		if s.State.Step%s.cfg.CheckpointEvery == 0 {
