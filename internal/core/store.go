@@ -54,6 +54,7 @@ type ToolResultRecord struct {
 // event isn't lost to a slow subscriber.
 func (a *Agent) newSession(ctx context.Context, task string) (*Session, error) {
 	id := uuid.New()
+	writer := NewAsyncEventWriter(a.store, 4096)
 	sess := &Session{
 		State: State{
 			SessionID:  id,
@@ -64,7 +65,7 @@ func (a *Agent) newSession(ctx context.Context, task string) (*Session, error) {
 			UpdatedAt:  time.Now(),
 		},
 		cfg:    a.cfg,
-		subs:   make(map[chan Event]struct{}),
+		subs:   make(map[*Sub]struct{}),
 		ctx:    ctx,
 		cancel: func() {},
 		store:  a.store,
@@ -73,7 +74,12 @@ func (a *Agent) newSession(ctx context.Context, task string) (*Session, error) {
 		router: a.router,
 		tools:  a.tools,
 		ctxMgr: NewContextManager(a.cfg.ContextMaxTokens),
-		done:   make(chan struct{}),
+		writer: writer,
+		onSlowSubscriber: func(sub *Sub, e Event) {
+			// Stub: real impl would emit a metric, alert, or log
+			// when drops exceed a threshold per sub per minute.
+		},
+		done: make(chan struct{}),
 	}
 	if err := a.cp.Save(ctx, sess.State); err != nil {
 		return nil, fmt.Errorf("save initial state: %w", err)
@@ -88,10 +94,11 @@ func (a *Agent) loadSession(ctx context.Context, id uuid.UUID) (*Session, error)
 	if err != nil {
 		return nil, fmt.Errorf("load checkpoint: %w", err)
 	}
+	writer := NewAsyncEventWriter(a.store, 4096)
 	sess := &Session{
 		State:  state,
 		cfg:    a.cfg,
-		subs:   make(map[chan Event]struct{}),
+		subs:   make(map[*Sub]struct{}),
 		ctx:    ctx,
 		store:  a.store,
 		cp:     a.cp,
@@ -99,7 +106,11 @@ func (a *Agent) loadSession(ctx context.Context, id uuid.UUID) (*Session, error)
 		router: a.router,
 		tools:  a.tools,
 		ctxMgr: NewContextManager(a.cfg.ContextMaxTokens),
-		done:   make(chan struct{}),
+		writer: writer,
+		onSlowSubscriber: func(sub *Sub, e Event) {
+			// Same as newSession
+		},
+		done: make(chan struct{}),
 	}
 	return sess, nil
 }
@@ -117,39 +128,20 @@ func (s *Session) checkpoint() {
 	s.emit(Event{Type: EventCheckpoint, Payload: map[string]interface{}{"step": state.Step}})
 }
 
-// emit fans out an event to subscribers and persists it. Both happen async
-// when possible to keep the loop tight.
-func (s *Session) emit(e Event) {
-	e.SessionID = s.State.SessionID
-	if e.CreatedAt.IsZero() {
-		e.CreatedAt = time.Now()
-	}
-	// Persist
-	id, err := s.store.Append(s.ctx, e)
-	if err == nil {
-		e.ID = id
-	}
-	// Fan out
-	s.subMu.RLock()
-	for ch := range s.subs {
-		select {
-		case ch <- e:
-		default:
-			// Slow subscriber, drop. Caller can catch up via REST.
+// DeliverToolResult routes a frontend tool result back to the waiting
+// FrontendTool.Execute call. Call this from the HTTP/SSE handler when
+// a frontend client sends a tool.result event back over the stream.
+//
+// Usage:
+//   // In your HTTP handler, when you receive a tool_result from the frontend:
+//   session.DeliverToolResult(callID, result, err)
+func (s *Session) DeliverToolResult(callID string, result interface{}, err error) {
+	s.mu.RLock()
+	tools := s.tools
+	s.mu.RUnlock()
+	for _, t := range tools {
+		if ft, ok := t.(*FrontendTool); ok {
+			ft.DeliverResult(callID, result, err)
 		}
 	}
-	s.subMu.RUnlock()
-}
-
-func (s *Session) subscribe(ch chan Event) {
-	s.subMu.Lock()
-	s.subs[ch] = struct{}{}
-	s.subMu.Unlock()
-}
-
-func (s *Session) unsubscribe(ch chan Event) {
-	s.subMu.Lock()
-	delete(s.subs, ch)
-	s.subMu.Unlock()
-	close(ch)
 }

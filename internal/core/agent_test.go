@@ -35,7 +35,7 @@ func TestAgent_RunAndResume(t *testing.T) {
 		"final answer: 5",         // step 1: returns final answer
 	)
 
-	sess, ch, err := a.Run(context.Background(), "what is 2 + 3?")
+	sess, sub, err := a.Run(context.Background(), "what is 2 + 3?")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestAgent_RunAndResume(t *testing.T) {
 loop:
 	for {
 		select {
-		case e, ok := <-ch:
+		case e, ok := <-sub.Channel():
 			if !ok {
 				break loop
 			}

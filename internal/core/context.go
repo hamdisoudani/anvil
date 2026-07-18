@@ -51,21 +51,24 @@ func (cm *ContextManager) Pack(s State) []Message {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	out := []Message{
-		{Role: "system", Content: cm.sysPrompt},
-	}
+	// Pre-allocate capacity: system (3) + recent (up to 20) + 1 long-term.
+	// Avoids repeated slice growth on every step.
+	out := make([]Message, 0, 4+20)
+
+	out = append(out, Message{Role: "system", Content: cm.sysPrompt})
 
 	// Scratchpad = current plan as a system message so it stays top-of-mind
 	if plan := formatPlan(s.Plan); plan != "" {
 		out = append(out, Message{Role: "system", Content: "Current plan:\n" + plan})
 	}
 	if scratch, ok := s.Scratchpad["last_observation"]; ok {
+		// json.Marshal of the observation is bounded — we cap at 8KB.
 		if b, _ := json.Marshal(scratch); len(b) < 8000 {
 			out = append(out, Message{Role: "system", Content: "Last observation: " + string(b)})
 		}
 	}
 
-	// Recent history (last 20)
+	// Recent history (last 20). Slicing an existing slice is O(1).
 	recent := s.History
 	if len(recent) > 20 {
 		recent = recent[len(recent)-20:]

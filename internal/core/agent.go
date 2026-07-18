@@ -85,7 +85,7 @@ type Session struct {
 	State   State
 	cfg     Config
 	mu      sync.RWMutex
-	subs    map[chan Event]struct{}  // live SSE subscribers
+	subs    map[*Sub]struct{}  // live subscribers
 	subMu   sync.RWMutex
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -95,6 +95,9 @@ type Session struct {
 	router  LLMRouter
 	tools   map[string]Tool
 	ctxMgr  *ContextManager
+	writer  *AsyncEventWriter        // async event persistence
+	onSlowSubscriber func(sub *Sub, e Event) // hook for metrics
+	logger  Logger
 	done    chan struct{}
 }
 
@@ -130,38 +133,36 @@ func DefaultConfig() Config {
 
 // Run starts a new session for a given task. Returns immediately; the session
 // runs in a goroutine and emits events through the returned channel.
-func (a *Agent) Run(ctx context.Context, task string) (*Session, <-chan Event, error) {
+func (a *Agent) Run(ctx context.Context, task string) (*Session, *Sub, error) {
 	sess, err := a.newSession(ctx, task)
 	if err != nil {
 		return nil, nil, err
 	}
-	ch := make(chan Event, 64)
-	sess.subscribe(ch)
+	sub := sess.Stream("primary")
 	sess.emit(Event{
 		SessionID: sess.State.SessionID,
 		Type:      EventSessionStart,
 		Payload:   map[string]interface{}{"task": task},
 	})
 	go sess.loop()
-	return sess, ch, nil
+	return sess, sub, nil
 }
 
 // Resume picks up a session from its last checkpoint. Returns a new event
 // stream. The session continues with the same session_id.
-func (a *Agent) Resume(ctx context.Context, sessionID uuid.UUID) (*Session, <-chan Event, error) {
+func (a *Agent) Resume(ctx context.Context, sessionID uuid.UUID) (*Session, *Sub, error) {
 	sess, err := a.loadSession(ctx, sessionID)
 	if err != nil {
 		return nil, nil, err
 	}
-	ch := make(chan Event, 64)
-	sess.subscribe(ch)
+	sub := sess.Stream("primary")
 	sess.emit(Event{
 		SessionID: sess.State.SessionID,
 		Type:      EventSessionStart,
 		Payload:   map[string]interface{}{"resumed": true, "from_step": sess.State.Step},
 	})
 	go sess.loop()
-	return sess, ch, nil
+	return sess, sub, nil
 }
 
 // loop is the heart. Runs until done, paused, or context cancelled.

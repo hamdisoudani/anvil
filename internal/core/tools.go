@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -17,8 +18,14 @@ import (
 func (s *Session) executeTool(action Action) ToolResult {
 	var payload string
 	if action.ToolCall != nil {
-		b, _ := json.Marshal(action.ToolCall)
-		payload = string(b)
+		canonical, err := canonicalJSON(action.ToolCall)
+		if err == nil {
+			payload = canonical
+		} else {
+			// Fall back to raw JSON if canonicalization fails
+			b, _ := json.Marshal(action.ToolCall)
+			payload = string(b)
+		}
 	}
 	key := idempotencyKey(s.State.SessionID.String(), payload)
 
@@ -73,7 +80,72 @@ func (r ToolResult) Event() map[string]interface{} {
 }
 
 func idempotencyKey(sessionID, payload string) string {
-	// Canonical args would be sorted, but we trust the model to send stable JSON.
 	h := sha256.Sum256([]byte(sessionID + "|" + payload))
 	return hex.EncodeToString(h[:])
 }
+
+// canonicalJSON serializes a value with sorted keys, so semantically
+// equal objects always produce the same bytes. This is what makes
+// idempotency actually idempotent — {a:1, b:2} and {b:2, a:1} hash
+// the same.
+	func canonicalJSON(v interface{}) (string, error) {
+		// Marshal normally, then re-parse to a generic map and re-marshal
+		// with sorted keys.
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		var generic interface{}
+		if err := json.Unmarshal(b, &generic); err != nil {
+			return "", err
+		}
+		return marshalSorted(generic)
+	}
+
+	func marshalSorted(v interface{}) (string, error) {
+		switch t := v.(type) {
+		case map[string]interface{}:
+			// Collect keys and sort them
+			keys := make([]string, 0, len(t))
+			for k := range t {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			// Build JSON manually with sorted keys
+			var b []byte
+			b = append(b, '{')
+			for i, k := range keys {
+				if i > 0 {
+					b = append(b, ',')
+				}
+				kb, _ := json.Marshal(k)
+				b = append(b, kb...)
+				b = append(b, ':')
+				vb, err := marshalSorted(t[k])
+				if err != nil {
+					return "", err
+				}
+				b = append(b, vb...)
+			}
+			b = append(b, '}')
+			return string(b), nil
+		case []interface{}:
+			var b []byte
+			b = append(b, '[')
+			for i, item := range t {
+				if i > 0 {
+					b = append(b, ',')
+				}
+				vb, err := marshalSorted(item)
+				if err != nil {
+					return "", err
+				}
+				b = append(b, vb...)
+			}
+			b = append(b, ']')
+			return string(b), nil
+		default:
+			b, err := json.Marshal(t)
+			return string(b), err
+		}
+	}
