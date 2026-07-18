@@ -266,7 +266,6 @@ type Executor interface {
 
 var (
 	NewMCPSource     func(endpoint string) ToolSource
-	NewRAGMemory     func(store VectorStore) Memory
 	NewCrewCoord     func() SubAgentCoord
 	NewGroupChat     func() SubAgentCoord
 	NewCodeExecTools func(sandbox Executor) ToolSource
