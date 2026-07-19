@@ -1,7 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { AnvilProvider, AnvilChat, useFrontendTool } from "@anvil/react";
-import "@anvil/react/styles.css";
+import "./index.css";
 
 function App() {
   // Declare a frontend tool: get current time
@@ -39,21 +39,17 @@ function App() {
     },
   });
 
-  // A simple custom render — show a chip with the current URL when opened
   return (
     <AnvilProvider baseUrl="/api">
-      <div style={{ maxWidth: 720, margin: "0 auto", height: "100vh", display: "flex", flexDirection: "column" }}>
-        <header style={{ padding: "16px 24px", borderBottom: "1px solid #e5e5e5" }}>
-          <h1 style={{ margin: 0, fontSize: 20 }}>🔨 Anvil</h1>
-          <p style={{ margin: "4px 0 0", color: "#666", fontSize: 13 }}>
+      <div className="mx-auto max-w-3xl h-screen flex flex-col">
+        <header className="border-b bg-card p-4 flex flex-col gap-1">
+          <h1 className="text-xl font-semibold m-0">🔨 Anvil</h1>
+          <p className="text-sm text-muted-foreground m-0">
             Agent engine + React SDK demo. Try:{" "}
             <em>"What time is it?"</em> or <em>"Open github.com"</em>
           </p>
         </header>
-        <AnvilChat
-          placeholder="Ask anything…"
-          style={{ flex: 1 }}
-        />
+        <AnvilChat placeholder="Ask anything…" className="flex-1" />
       </div>
     </AnvilProvider>
   );
