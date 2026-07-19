@@ -31,6 +31,9 @@ import {
   type ClientConfig,
 } from "@anvil/client";
 
+// Re-export types consumers need
+export type { AnvilEvent, EventType, Subscription, ClientConfig };
+
 // ── Context ───────────────────────────────────────────────────────
 
 export interface FrontendToolExecutor<TInput = unknown, TOutput = unknown> {
@@ -334,16 +337,16 @@ export interface ChatMessage {
   related?: string[];
 }
 
-export function useChat(sessionId: string | null) {
-  const { events } = useEvents<any>(sessionId);
+export function useChat(sessionId: string | null, events?: AnvilEvent[]) {
+  const { events: ownEvents } = useEvents<any>(sessionId);
+  const allEvents = events ?? ownEvents;
   const messages = useMemo<ChatMessage[]>(() => {
     const out: ChatMessage[] = [];
     let currentAssistant: ChatMessage | null = null;
     let subAgents = new Map<string, ChatMessage>();
-    // Stash for sources that arrive before the assistant message
     let pendingSources: Array<{ id: number; url: string; title: string; domain: string }> | null = null;
 
-    for (const e of events) {
+    for (const e of allEvents) {
       switch (e.type) {
         case "session.start": {
           // The user message is the task itself; emit it once.
@@ -505,7 +508,7 @@ export function useChat(sessionId: string | null) {
       }
     }
     return out;
-  }, [events]);
+  }, [allEvents]);
 
   return { messages };
 }

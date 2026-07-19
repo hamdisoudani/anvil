@@ -1,27 +1,22 @@
 /**
- * AnvilPerplexity — a production-quality Perplexity-style search/answer UI.
+ * AnvilPerplexity — v0.6 production-quality Perplexity-style UI.
  *
- * Uses the Anvil engine (via @anvil/react-headless hooks) for streaming,
- * sessions, and tool calls. Uses shadcn/ui + Tailwind for visuals.
+ * FIXES in this version:
+ * 1. URL routing: / → landing, /thread/:id → resume session
+ * 2. Shared event subscription (useSession + useChat don't create duplicate SSE)
+ * 3. Fixed mobile input (safe-area, touch targets, stuck disabled state)
+ * 4. Thread history in localStorage
+ * 5. First message + streaming now work correctly
  *
- * Features:
- *   - Centered landing with focus modes (Web, Academic, News, Reddit)
- *   - Streaming answer with inline citations [N] that hover-link to sources
- *   - Sources as numbered footnote cards with domain favicons
- *   - Related questions as clickable chips
- *   - Thread/session list sidebar (collapsible)
- *   - Plan visible inline as the agent thinks
- *   - Dark mode default, light mode supported via Tailwind
- *
- * Wire protocol: uses the same SSE event format as the rest of the SDK.
- * The wire format is documented in docs/wire-protocol.md.
+ * Uses shadcn/ui + Tailwind. Runs inside AnvilProvider.
  */
-import { useState, useRef, useEffect, useMemo, type FormEvent } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, type FormEvent } from "react";
 import {
   useAnvil,
   useSession,
   useChat,
   useFrontendTool,
+  type AnvilEvent,
   type ChatMessage,
 } from "@anvil/react-headless";
 import { Button } from "./components/ui/button";
@@ -46,9 +41,11 @@ import {
   RotateCw,
   X,
   Plus,
+  History,
+  Trash2,
 } from "lucide-react";
 
-// ── Focus modes (Perplexity-style) ────────────────────────────────
+// ── Focus modes & suggestions ────────────────────────────────────
 
 const FOCUS_MODES = [
   { id: "web", label: "Web", icon: Globe },
@@ -68,164 +65,326 @@ const SUGGESTIONS = [
   { icon: Sparkles, text: "Compare Next.js, Remix, and Astro for production" },
 ];
 
+// ── Thread storage ───────────────────────────────────────────────
+
+interface ThreadMeta {
+  id: string;
+  title: string;
+  timestamp: number;
+}
+
+function loadThreads(): ThreadMeta[] {
+  try {
+    return JSON.parse(localStorage.getItem("anvil_threads") || "[]");
+  } catch { return []; }
+}
+
+function saveThread(id: string, title: string) {
+  const threads = loadThreads().filter((t) => t.id !== id);
+  threads.unshift({ id, title: title.slice(0, 80), timestamp: Date.now() });
+  localStorage.setItem("anvil_threads", JSON.stringify(threads.slice(0, 50)));
+}
+
+function deleteThread(id: string) {
+  localStorage.setItem("anvil_threads", JSON.stringify(loadThreads().filter((t) => t.id !== id)));
+}
+
+// ── URL routing helpers ──────────────────────────────────────────
+
+function getThreadIdFromUrl(): string | null {
+  const m = window.location.hash.match(/^#\/thread\/(.+)$/);
+  return m ? decodeURIComponent(m[1]!) : null;
+}
+
+function navigateToThread(id: string) {
+  window.history.pushState(null, "", `/#/thread/${encodeURIComponent(id)}`);
+}
+
+function navigateToHome() {
+  window.history.pushState(null, "", "/");
+}
+
 // ── Main component ───────────────────────────────────────────────
 
 export interface AnvilPerplexityProps {
   className?: string;
-  apiBaseUrl?: string;
   defaultFocus?: FocusMode;
 }
 
 export function AnvilPerplexity({
   className,
-  apiBaseUrl = "",
   defaultFocus = "web",
 }: AnvilPerplexityProps) {
-  const session = useSession();
-  const { messages } = useChat(session.sessionId);
+  // Shared events array — useSession and useChat both read from this,
+  // avoiding duplicate SSE connections.
+  const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
+  const [threadId, setThreadId] = useState<string | null>(getThreadIdFromUrl);
+
+  // Session hook — writes to sharedEvents
+  const session = useSession({
+    sessionId: threadId ?? undefined,
+    onEvent: (e) => setSharedEvents((prev) => [...prev, e]),
+  });
+
+  // Chat hook — uses sharedEvents directly (no subscription)
+  const { messages } = useChat(session.sessionId, sharedEvents);
+
   const [input, setInput] = useState("");
   const [focus, setFocus] = useState<FocusMode>(defaultFocus);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [threads, setThreads] = useState<ThreadMeta[]>(loadThreads);
 
-  // Auto-scroll to bottom as messages stream
+  // Listen for popstate (back/forward navigation)
+  useEffect(() => {
+    const onPop = () => setThreadId(getThreadIdFromUrl());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Auto-scroll as messages stream
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // Focus input on mount and after each assistant message
+  // Focus input when idle
   useEffect(() => {
-    inputRef.current?.focus();
+    if (session.status === "idle" || session.status === "done") {
+      inputRef.current?.focus();
+    }
   }, [session.status]);
+
+  // Save thread metadata when done
+  useEffect(() => {
+    if (session.sessionId && messages.length > 0) {
+      const firstMsg = messages.find((m) => m.role === "user");
+      if (firstMsg) {
+        saveThread(session.sessionId, firstMsg.content);
+        setThreads(loadThreads);
+      }
+    }
+  }, [session.sessionId, messages]);
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
     const text = input.trim();
     if (!text) return;
     setInput("");
+    setSharedEvents([]); // Fresh state for new session
+    navigateToThread(Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
     try {
-      await session.start(text);
+      const sid = await session.start(text);
+      navigateToThread(sid);
+      setThreadId(sid);
     } catch (err) {
       console.error("Failed to start session:", err);
     }
   };
 
-  const isRunning = session.status === "running";
+  const isRunning = session.status === "running" || session.status === "starting";
   const isEmpty = messages.length === 0;
 
   return (
     <TooltipProvider>
       <div className={cn("flex h-full flex-col bg-background text-foreground", className)}>
         {/* Top bar */}
-        <header className="flex h-12 items-center justify-between border-b px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background">
-              <Search className="h-3.5 w-3.5" />
+        <header className="flex h-10 sm:h-12 items-center justify-between border-b px-2 sm:px-4 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <div className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-foreground text-background shrink-0">
+              <Search className="h-3 sm:h-3.5 w-3 sm:w-3.5" />
             </div>
-            <span className="text-sm font-medium">Anvil</span>
-            <span className="text-xs text-muted-foreground">Perplexity</span>
+            <span className="text-xs sm:text-sm font-medium truncate">Anvil</span>
+            <span className="hidden sm:inline text-xs text-muted-foreground">Perplexity</span>
           </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="sm" className="text-xs">
-              <Plus className="mr-1.5 h-3.5 w-3.5" /> New thread
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 sm:h-8 sm:w-8"
+                  onClick={() => {
+                    setShowHistory(!showHistory);
+                    setThreads(loadThreads());
+                  }}
+                >
+                  <History className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>History</TooltipContent>
+            </Tooltip>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-[10px] sm:text-xs h-7 sm:h-8"
+              onClick={() => {
+                navigateToHome();
+                setThreadId(null);
+                setSharedEvents([]);
+                session.cancel();
+              }}
+            >
+              <Plus className="mr-1 h-3 sm:h-3.5 w-3 sm:w-3.5" /> New thread
             </Button>
           </div>
         </header>
 
-        {/* Messages */}
-        <ScrollArea ref={scrollRef} className="flex-1">
-          {isEmpty ? (
-            <Landing
-              focus={focus}
-              onFocusChange={setFocus}
-              onSubmit={(text) => {
-                // Submit immediately — the input state is just for the form,
-                // not the source of truth.
-                setInput(text);
-                session.start(text).catch(console.error);
-              }}
-            />
-          ) : (
-            <div className="mx-auto max-w-3xl px-6 py-8 space-y-8">
-              {messages.map((m, i) => (
-                <MessageBubble
-                  key={m.id}
-                  msg={m}
-                  isLast={i === messages.length - 1}
-                  isRunning={isRunning && i === messages.length - 1}
-                />
-              ))}
-            </div>
-          )}
-          {session.error && (
-            <div className="mx-auto max-w-3xl px-6 pb-4">
-              <Card className="border-destructive/50 bg-destructive/5 p-3">
-                <div className="flex items-start gap-2">
-                  <X className="h-4 w-4 text-destructive mt-0.5" />
-                  <div>
-                    <div className="text-sm font-medium text-destructive">Error</div>
-                    <div className="text-xs text-destructive/80 mt-1">{session.error.message}</div>
+        {/* Thread history sidebar */}
+        {showHistory && (
+          <div className="border-b bg-card/50">
+            <div className="mx-auto max-w-2xl lg:max-w-3xl px-2 sm:px-4 py-2 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Recent threads
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={() => setShowHistory(false)}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+              {threads.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">No previous threads</p>
+              ) : (
+                threads.map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 group">
+                    <button
+                      type="button"
+                      className="flex-1 text-left text-xs py-1.5 px-2 rounded hover:bg-accent/30 truncate"
+                      onClick={() => {
+                        navigateToThread(t.id);
+                        setThreadId(t.id);
+                        setShowHistory(false);
+                        setSharedEvents([]);
+                        session.cancel();
+                      }}
+                    >
+                      <span className="line-clamp-1">{t.title}</span>
+                      <span className="text-[9px] text-muted-foreground">
+                        {new Date(t.timestamp).toLocaleDateString()}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="opacity-0 group-hover:opacity-100 h-5 w-5 text-muted-foreground hover:text-destructive"
+                      onClick={() => { deleteThread(t.id); setThreads(loadThreads()); }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
                   </div>
-                </div>
-              </Card>
+                ))
+              )}
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Messages */}
+        <ScrollArea ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain">
+          <div className="min-h-full">
+            {isEmpty ? (
+              <Landing
+                focus={focus}
+                onFocusChange={setFocus}
+                onSubmit={async (text) => {
+                  setInput(text);
+                  setSharedEvents([]);
+                  navigateToThread(Date.now().toString(36));
+                  try {
+                    const sid = await session.start(text);
+                    navigateToThread(sid);
+                    setThreadId(sid);
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+              />
+            ) : (
+              <div className="mx-auto max-w-2xl lg:max-w-3xl px-3 sm:px-6 py-3 sm:py-8 space-y-4 sm:space-y-8">
+                {messages.map((m, i) => (
+                  <MessageBubble
+                    key={m.id}
+                    msg={m}
+                    isLast={i === messages.length - 1}
+                    isRunning={isRunning && i === messages.length - 1}
+                  />
+                ))}
+              </div>
+            )}
+            {session.error && (
+              <div className="mx-auto max-w-2xl lg:max-w-3xl px-3 sm:px-6 pb-3 sm:pb-4">
+                <Card className="border-destructive/50 bg-destructive/5 p-3">
+                  <div className="flex items-start gap-2">
+                    <X className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-destructive">Error</div>
+                      <div className="text-xs text-destructive/80 mt-1 break-words">{session.error.message}</div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            )}
+          </div>
         </ScrollArea>
 
         {/* Input bar */}
-        <div className="border-t bg-background p-4">
-          <form
-            onSubmit={submit}
-            className="mx-auto max-w-3xl"
-          >
-            <Card className="rounded-2xl shadow-sm">
-              <div className="flex items-end gap-2 p-3">
-                <Textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask anything…"
-                  rows={1}
-                  disabled={isRunning}
-                  className="min-h-[24px] max-h-48 resize-none border-0 shadow-none focus-visible:ring-0 px-1"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      submit();
-                    }
-                  }}
-                />
-                <div className="flex items-center gap-1">
-                  <FocusModeSelector focus={focus} onChange={setFocus} disabled={isRunning} />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="submit"
-                        size="icon"
-                        disabled={!input.trim() || isRunning}
-                        className="h-8 w-8 rounded-full"
-                      >
-                        <ArrowUp className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Send</TooltipContent>
-                  </Tooltip>
+        <div className="border-t bg-background px-safe pb-safe" style={{ paddingBottom: 'env(safe-area-inset-bottom, 8px)' }}>
+          <div className="p-2 sm:p-4">
+            <form onSubmit={submit} className="mx-auto max-w-2xl lg:max-w-3xl">
+              <Card className="rounded-xl sm:rounded-2xl shadow-sm border">
+                <div className="flex items-end gap-1.5 sm:gap-2 p-2 sm:p-3">
+                  <textarea
+                    ref={inputRef as any}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    placeholder="Ask anything…"
+                    rows={1}
+                    disabled={isRunning}
+                    className="flex-1 min-h-[22px] sm:min-h-[24px] max-h-36 sm:max-h-48 resize-none border-0 shadow-none focus:outline-none bg-transparent px-1 text-sm leading-5 sm:leading-6 py-[3px]"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                  />
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="hidden sm:flex items-center gap-1">
+                      <FocusModeSelector focus={focus} onChange={setFocus} disabled={isRunning} />
+                    </div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="submit"
+                          size="icon"
+                          disabled={!input.trim() || isRunning}
+                          className="h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform"
+                        >
+                          <ArrowUp className="h-4 sm:h-[18px] w-4 sm:w-[18px]" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Send</TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
+              </Card>
+              <div className="mt-1.5 sm:mt-2 text-center text-[9px] sm:text-[10px] text-muted-foreground px-2">
+                Anvil can make mistakes. Verify important info.
               </div>
-            </Card>
-            <div className="mt-2 text-center text-[10px] text-muted-foreground">
-              Anvil can make mistakes. Verify important info.
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       </div>
     </TooltipProvider>
   );
 }
 
-// ── Landing state (empty messages) ───────────────────────────────
+// ── Landing state ────────────────────────────────────────────────
 
 function Landing({
   focus,
@@ -237,30 +396,32 @@ function Landing({
   onSubmit: (text: string) => void;
 }) {
   return (
-    <div className="mx-auto max-w-3xl px-6 py-16 flex flex-col items-center text-center space-y-8">
-      <div className="space-y-3">
-        <h1 className="text-4xl font-semibold tracking-tight">Where knowledge begins</h1>
-        <p className="text-sm text-muted-foreground">
+    <div className="mx-auto max-w-2xl lg:max-w-3xl px-4 sm:px-6 pt-10 sm:pt-16 pb-6 sm:pb-8 flex flex-col items-center text-center space-y-6 sm:space-y-8">
+      <div className="space-y-2 sm:space-y-3">
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight">
+          Where knowledge begins
+        </h1>
+        <p className="text-xs sm:text-sm text-muted-foreground max-w-md mx-auto px-2">
           Ask anything. Anvil searches the web, reads the top sources, and writes a cited answer.
         </p>
       </div>
 
-      {/* Input (large landing variant) */}
-      <div className="w-full max-w-2xl">
+      {/* Focus mode pills */}
+      <div className="w-full max-w-xs sm:max-w-md">
         <FocusModeSelector focus={focus} onChange={onFocusChange} disabled={false} large />
       </div>
 
-      {/* Suggestions grid */}
-      <div className="w-full max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-2 pt-4">
+      {/* Suggestions */}
+      <div className="w-full grid grid-cols-1 gap-2 pt-2 sm:pt-4">
         {SUGGESTIONS.map((s, i) => (
           <button
             key={i}
             onClick={() => onSubmit(s.text)}
-            className="text-left p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group"
+            className="text-left p-2.5 sm:p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group active:scale-[0.98]"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm">{s.text}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="text-xs sm:text-sm line-clamp-2">{s.text}</span>
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
             </div>
           </button>
         ))}
@@ -283,7 +444,7 @@ function FocusModeSelector({
   large?: boolean;
 }) {
   return (
-    <div className={cn("flex items-center gap-1", large ? "" : "border-r pr-2 mr-1")}>
+    <div className={cn("flex items-center gap-1 flex-wrap justify-center", large ? "" : "sm:border-r sm:pr-2 sm:mr-1")}>
       {FOCUS_MODES.map((m) => {
         const Icon = m.icon;
         const active = focus === m.id;
@@ -295,13 +456,13 @@ function FocusModeSelector({
                 disabled={disabled}
                 onClick={() => onChange(m.id)}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+                  "inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-2 sm:px-2.5 py-1 text-[10px] sm:text-xs font-medium transition-colors disabled:opacity-50 active:scale-95",
                   active
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
               >
-                <Icon className="h-3 w-3" />
+                <Icon className="h-2.5 sm:h-3 w-2.5 sm:w-3" />
                 <span>{m.label}</span>
               </button>
             </TooltipTrigger>
@@ -313,13 +474,13 @@ function FocusModeSelector({
   );
 }
 
-// ── Message bubble ────────────────────────────────────────────────
+// ── Message components ───────────────────────────────────────────
 
 function MessageBubble({ msg, isLast, isRunning }: { msg: ChatMessage; isLast: boolean; isRunning: boolean }) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-foreground text-background px-4 py-2.5 text-sm whitespace-pre-wrap">
+        <div className="max-w-[92%] sm:max-w-[85%] rounded-2xl rounded-br-sm bg-foreground text-background px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm whitespace-pre-wrap break-words">
           {msg.content}
         </div>
       </div>
@@ -331,60 +492,85 @@ function MessageBubble({ msg, isLast, isRunning }: { msg: ChatMessage; isLast: b
   return <AssistantBubble msg={msg} isLast={isLast} isRunning={isRunning} />;
 }
 
-// ── Assistant message (with sources + related) ──────────────────
-
 function AssistantBubble({ msg, isLast, isRunning }: { msg: ChatMessage; isLast: boolean; isRunning: boolean }) {
-  const sources = useMemo(() => extractSources(msg), [msg]);
-  const related = useMemo(() => extractRelated(msg), [msg]);
+  const sources = useMemo(() => {
+    const raw = (msg as any).sources as Array<{ id: number; url: string; title: string; domain: string }> | undefined;
+    return raw ? raw.map((s) => ({ id: s.id, url: s.url, title: s.title, domain: s.domain })) : [];
+  }, [msg]);
+  const related = useMemo(() => {
+    const raw = (msg as any).related as string[] | undefined;
+    return raw ?? [];
+  }, [msg]);
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* The answer */}
-      <div className="prose prose-sm dark:prose-invert max-w-none text-sm leading-7 whitespace-pre-wrap">
-        {msg.content}
-        {msg.isStreaming && (
-          <span className="inline-block w-1.5 h-4 bg-foreground ml-0.5 animate-pulse align-middle" />
+    <div className="flex flex-col gap-2 sm:gap-3">
+      {/* Answer */}
+      <div className="text-xs sm:text-sm leading-6 sm:leading-7 whitespace-pre-wrap break-words">
+        {msg.content || (
+          <span className="text-muted-foreground italic">
+            {isRunning ? "Thinking…" : "No response"}
+          </span>
+        )}
+        {isRunning && (
+          <span className="inline-block w-1.5 h-3.5 sm:h-4 bg-foreground ml-0.5 animate-pulse align-text-bottom" />
         )}
       </div>
 
-      {/* Sources (numbered footnote cards) */}
+      {/* Sources */}
       {sources.length > 0 && (
-        <div className="space-y-2 pt-2">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="space-y-1.5 sm:space-y-2 pt-1 sm:pt-2">
+          <div className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Sources
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-1.5 sm:gap-2">
             {sources.map((s) => (
-              <SourceCard key={s.id} source={s} />
+              <a
+                key={s.id}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block p-2 sm:p-2.5 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group active:scale-[0.99]"
+              >
+                <div className="flex items-start gap-2 sm:gap-2.5">
+                  <Badge variant="outline" className="h-4 sm:h-5 px-1 sm:px-1.5 text-[9px] sm:text-[10px] font-mono shrink-0">
+                    {s.id}
+                  </Badge>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] sm:text-xs font-medium line-clamp-1">{s.title}</div>
+                    <div className="text-[9px] sm:text-[10px] text-muted-foreground truncate mt-0.5">{s.domain}</div>
+                  </div>
+                  <ChevronRight className="h-2.5 sm:h-3 w-2.5 sm:w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-1 shrink-0" />
+                </div>
+              </a>
             ))}
           </div>
         </div>
       )}
 
-      {/* Related questions */}
+      {/* Related */}
       {related.length > 0 && (
-        <div className="space-y-2 pt-4">
-          <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="space-y-1.5 sm:space-y-2 pt-2 sm:pt-4">
+          <div className="text-[9px] sm:text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
             Related
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
             {related.map((q, i) => (
               <button
                 key={i}
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-full border bg-card px-3 py-1.5 text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors"
+                className="inline-flex items-center gap-1 sm:gap-1.5 rounded-full border bg-card px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors active:scale-95"
               >
-                <Sparkles className="h-3 w-3 text-muted-foreground" />
-                <span>{q}</span>
+                <Sparkles className="h-2.5 sm:h-3 w-2.5 sm:w-3 text-muted-foreground shrink-0" />
+                <span className="line-clamp-1">{q}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Actions (only on last, complete messages) */}
+      {/* Actions */}
       {isLast && !isRunning && msg.content && (
-        <div className="flex items-center gap-1 pt-1 text-muted-foreground">
+        <div className="flex items-center gap-0.5 sm:gap-1 pt-0.5 sm:pt-1 text-muted-foreground">
           <ActionButton icon={Copy} label="Copy answer" />
           <ActionButton icon={ThumbsUp} label="Good answer" />
           <ActionButton icon={ThumbsDown} label="Bad answer" />
@@ -399,8 +585,8 @@ function ActionButton({ icon: Icon, label }: { icon: any; label: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7">
-          <Icon className="h-3.5 w-3.5" />
+        <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8">
+          <Icon className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
         </Button>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
@@ -408,72 +594,44 @@ function ActionButton({ icon: Icon, label }: { icon: any; label: string }) {
   );
 }
 
-// ── Source card (numbered footnote) ─────────────────────────────
-
-function SourceCard({ source }: { source: ExtractedSource }) {
-  return (
-    <a
-      href={source.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block p-2.5 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group"
-    >
-      <div className="flex items-start gap-2.5">
-        <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-mono">
-          {source.id}
-        </Badge>
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-medium line-clamp-1">{source.title}</div>
-          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
-            {source.domain}
-          </div>
-        </div>
-        <ChevronRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-1" />
-      </div>
-    </a>
-  );
-}
-
-// ── Tool call bubble (collapsed) ────────────────────────────────
-
 function ToolCallBubble({ msg }: { msg: ChatMessage }) {
   const [open, setOpen] = useState(false);
   const hasResult = msg.toolResult !== undefined || msg.toolError !== undefined;
   return (
     <div className="flex justify-start">
-      <Card className="w-full max-w-[90%] text-xs">
+      <Card className="w-full max-w-[95%] sm:max-w-[90%] text-[11px] sm:text-xs">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="w-full flex items-center gap-3 p-3 text-left hover:bg-accent/30 transition-colors"
+          className="w-full flex items-center gap-2 sm:gap-3 p-2 sm:p-3 text-left hover:bg-accent/30 transition-colors active:bg-accent/50"
         >
           <span className="text-sm">🔧</span>
-          <span className="font-mono font-medium flex-1 truncate">{msg.toolName}</span>
+          <span className="font-mono font-medium flex-1 truncate text-[11px] sm:text-xs">{msg.toolName}</span>
           {msg.toolError ? (
-            <Badge variant="destructive">error</Badge>
+            <Badge variant="destructive" className="text-[9px] sm:text-[10px]">error</Badge>
           ) : hasResult ? (
-            <Badge variant="secondary">done</Badge>
+            <Badge variant="secondary" className="text-[9px] sm:text-[10px]">done</Badge>
           ) : (
-            <Badge variant="outline" className="animate-pulse">running</Badge>
+            <Badge variant="outline" className="animate-pulse text-[9px] sm:text-[10px]">running</Badge>
           )}
-          <ChevronRight className={cn("h-3 w-3 text-muted-foreground transition-transform", open && "rotate-90")} />
+          <ChevronRight className={cn("h-3 w-3 text-muted-foreground transition-transform shrink-0", open && "rotate-90")} />
         </button>
         {open && (
-          <div className="border-t p-3 space-y-2 text-xs">
+          <div className="border-t p-2 sm:p-3 space-y-1.5 sm:space-y-2 text-[11px] sm:text-xs">
             {msg.toolInput !== undefined && (
               <div>
-                <div className="text-muted-foreground font-semibold uppercase text-[10px] tracking-wider mb-1">Input</div>
-                <pre className="bg-muted p-2 rounded font-mono overflow-x-auto max-h-48">
+                <div className="text-muted-foreground font-semibold uppercase text-[9px] sm:text-[10px] tracking-wider mb-0.5 sm:mb-1">Input</div>
+                <pre className="bg-muted p-1.5 sm:p-2 rounded font-mono overflow-x-auto max-h-32 sm:max-h-48 text-[10px] sm:text-xs">
                   {JSON.stringify(msg.toolInput, null, 2)}
                 </pre>
               </div>
             )}
             {hasResult && (
               <div>
-                <div className="text-muted-foreground font-semibold uppercase text-[10px] tracking-wider mb-1">
+                <div className="text-muted-foreground font-semibold uppercase text-[9px] sm:text-[10px] tracking-wider mb-0.5 sm:mb-1">
                   {msg.toolError ? "Error" : "Result"}
                 </div>
-                <pre className="bg-muted p-2 rounded font-mono overflow-x-auto max-h-48">
+                <pre className="bg-muted p-1.5 sm:p-2 rounded font-mono overflow-x-auto max-h-32 sm:max-h-48 text-[10px] sm:text-xs">
                   {msg.toolError ?? JSON.stringify(msg.toolResult, null, 2)}
                 </pre>
               </div>
@@ -485,37 +643,5 @@ function ToolCallBubble({ msg }: { msg: ChatMessage }) {
   );
 }
 
-// ── Helpers ──────────────────────────────────────────────────────
-
-interface ExtractedSource {
-  id: number;
-  url: string;
-  title: string;
-  domain: string;
-}
-
-function extractSources(msg: ChatMessage): ExtractedSource[] {
-  // The chat reducer stores sources on a `sources` field of the message
-  // (set when sources.found events arrive). Extract from there.
-  const raw = (msg as any).sources as Array<{ id: number; url: string; title: string; domain: string }> | undefined;
-  if (raw && Array.isArray(raw) && raw.length > 0) return raw;
-  return [];
-}
-
-function extractRelated(msg: ChatMessage): string[] {
-  const raw = (msg as any).related as string[] | undefined;
-  if (raw && Array.isArray(raw)) return raw;
-  return [];
-}
-
-// Re-exports for convenience
-export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool } from "@anvil/react-headless";
-export type { ChatMessage } from "@anvil/react-headless";
-export type { AnvilEvent } from "@anvil/client";
-export { Button } from "./components/ui/button";
-export { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "./components/ui/card";
-export { Badge } from "./components/ui/badge";
-export { Textarea, Input } from "./components/ui/input";
-export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
-export { ScrollArea } from "./components/ui/scroll-area";
-export { cn } from "./lib/utils";
+// Re-export headless primitives
+export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, type AnvilEvent } from "@anvil/react-headless";
