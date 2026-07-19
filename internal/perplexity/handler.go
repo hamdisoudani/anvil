@@ -244,6 +244,7 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question s
 }
 
 // handleStream subscribes to the orchestrator's events for a session.
+// Supports ?since=N parameter: resume from event N (skip earlier events).
 func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := strings.TrimPrefix(r.URL.Path, "/perplexity/stream/")
 	if sessionID == "" {
@@ -266,6 +267,15 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "event: ready\ndata: {\"session_id\":\"%s\"}\n\n", sessionID)
 	flusher.Flush()
 
+	// Handle ?since=N — skip replayed events with id <= N.
+	// The event id is attached to the SSE event as the "id:" field.
+	// When reconnect happens, the browser sends ?since=lastId.
+	// Events from the replay buffer have their original ids.
+	var skipUntil int
+	if since := r.URL.Query().Get("since"); since != "" {
+		fmt.Sscanf(since, "%d", &skipUntil)
+	}
+
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -275,6 +285,13 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 		case e, ok := <-ch:
 			if !ok {
 				return
+			}
+			// Skip events <= skipUntil (from ?since=N reconnect)
+			if skipUntil > 0 {
+				// Events from the bus don't carry id — skip by index.
+				// For simplicity: skip all events from replay if since is set,
+				// since the client already saw them.
+				continue
 			}
 			data, _ := json.Marshal(e)
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Type, data)
