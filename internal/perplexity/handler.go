@@ -137,13 +137,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "/perplexity/ask" && r.Method == "POST":
 		h.handleAsk(w, r)
+	case path == "/tasks" && r.Method == "POST":
+		// Compatibility shim: the AnvilReact SDK calls POST /tasks.
+		// Forward to the same handler.
+		h.handleAsk(w, r)
 	case strings.HasPrefix(path, "/perplexity/stream/"):
 		h.handleStream(w, r)
+	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/events"):
+		// Compatibility shim: /sessions/:id/events
+		// Forward to /perplexity/stream/:id
+		newPath := "/perplexity/stream/" + strings.TrimPrefix(path, "/sessions/")
+		newPath = strings.TrimSuffix(newPath, "/events")
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = newPath
+		h.handleStream(w, r2)
 	case path == "/healthz":
 		w.WriteHeader(200)
 		fmt.Fprintln(w, "ok")
+	case strings.HasPrefix(path, "/app"):
+		h.handleApp(w, r)
 	case path == "/" || path == "/index.html":
-		h.handleIndex(w, r)
+		// Redirect to the React app
+		http.Redirect(w, r, "/app/", http.StatusTemporaryRedirect)
 	default:
 		http.NotFound(w, r)
 	}
@@ -153,14 +168,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // existing thread; without one, a new thread is created.
 func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Question string `json:"question"`
+		// New API field (preferred)
+		Question string `json:"question,omitempty"`
+		// Legacy field for AnvilClient.startTask compatibility
+		Task    string `json:"task,omitempty"`
 		ThreadID string `json:"thread_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
-	if req.Question == "" {
+	question := req.Question
+	if question == "" {
+		question = req.Task
+	}
+	if question == "" {
 		http.Error(w, "question required", http.StatusBadRequest)
 		return
 	}
@@ -186,6 +208,15 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 
 // runSearch runs the orchestrator and publishes events to the bus.
 func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question string) {
+	// Emit a session.start event so the React SDK can render the user message
+	h.Bus.Publish(sessionID, Event{
+		Type: "session.start",
+		Payload: map[string]interface{}{
+			"task":      question,
+			"thread_id": threadID,
+		},
+	})
+
 	result, err := h.Orchestrator.Run(ctx, question, func(e Event) {
 		h.Bus.Publish(sessionID, e)
 	})

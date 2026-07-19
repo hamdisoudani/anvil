@@ -328,6 +328,10 @@ export interface ChatMessage {
   isStreaming?: boolean;
   subAgentId?: string;
   subAgentRole?: string;
+  /** Sources from the agent (populated from sources.found events) */
+  sources?: Array<{ id: number; url: string; title: string; domain: string }>;
+  /** Related questions from the agent (populated from show_related) */
+  related?: string[];
 }
 
 export function useChat(sessionId: string | null) {
@@ -420,6 +424,47 @@ export function useChat(sessionId: string | null) {
             };
             out.push(msg);
             subAgents.set(p.sub_id, msg);
+          }
+          break;
+        }
+        case "sources.found": {
+          const p = e.payload as any;
+          const sources = p.sources as Array<{ id: number; url: string; title: string; domain: string }>;
+          // Attach to the current (last) assistant message
+          for (let i = out.length - 1; i >= 0; i--) {
+            const m = out[i];
+            if (m && m.role === "assistant") {
+              out[i] = { ...m, sources };
+              break;
+            }
+          }
+          break;
+        }
+        case "frontend.call": {
+          // Attach the call's data to the current assistant message
+          const p = e.payload as any;
+          if (p.name === "show_related" && p.input && p.input.questions) {
+            for (let i = out.length - 1; i >= 0; i--) {
+              const m = out[i];
+              if (m && m.role === "assistant") {
+                out[i] = { ...m, related: p.input.questions };
+                break;
+              }
+            }
+          }
+          break;
+        }
+        case "done": {
+          // The final done event may include sources/related at the top level
+          const p = e.payload as any;
+          if (p.sources || p.related) {
+            for (let i = out.length - 1; i >= 0; i--) {
+              const m = out[i];
+              if (m && m.role === "assistant") {
+                out[i] = { ...m, sources: m.sources ?? p.sources, related: m.related ?? p.related };
+                break;
+              }
+            }
           }
           break;
         }

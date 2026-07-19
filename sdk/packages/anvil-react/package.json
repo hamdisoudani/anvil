@@ -27,6 +27,7 @@
     "@anvil/client": "workspace:*",
     "@anvil/react-headless": "workspace:*",
     "@radix-ui/react-slot": "^1.1.0",
+    "@radix-ui/react-tooltip": "^1.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "tailwind-merge": "^2.3.0",

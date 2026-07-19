@@ -48,6 +48,7 @@ const (
 	EventSourcesFound EventType = "sources.found"
 	EventError        EventType = "error"
 	EventDone         EventType = "done"
+	EventSessionStart EventType = "session.start"
 )
 
 // Event is what the orchestrator publishes.
