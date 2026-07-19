@@ -340,6 +340,8 @@ export function useChat(sessionId: string | null) {
     const out: ChatMessage[] = [];
     let currentAssistant: ChatMessage | null = null;
     let subAgents = new Map<string, ChatMessage>();
+    // Stash for sources that arrive before the assistant message
+    let pendingSources: Array<{ id: number; url: string; title: string; domain: string }> | null = null;
 
     for (const e of events) {
       switch (e.type) {
@@ -366,8 +368,11 @@ export function useChat(sessionId: string | null) {
               content: "",
               timestamp: Date.parse(e.createdAt),
               isStreaming: true,
+              // Migrate pending sources if any
+              sources: pendingSources ?? undefined,
             };
             out.push(currentAssistant);
+            pendingSources = null;
           }
           currentAssistant.content += delta;
           // Trigger re-render — push a new object each chunk
@@ -431,12 +436,23 @@ export function useChat(sessionId: string | null) {
         case "sources.found": {
           const p = e.payload as any;
           const sources = p.sources as Array<{ id: number; url: string; title: string; domain: string }>;
-          // Attach to the current (last) assistant message
-          for (let i = out.length - 1; i >= 0; i--) {
-            const m = out[i];
-            if (m && m.role === "assistant") {
-              out[i] = { ...m, sources };
-              break;
+          if (currentAssistant) {
+            // Attach to the current assistant message
+            const idx = out.indexOf(currentAssistant);
+            if (idx >= 0) {
+              currentAssistant = { ...(currentAssistant as ChatMessage), sources };
+              out[idx] = currentAssistant;
+            }
+          } else {
+            // No assistant message yet — stash for later
+            pendingSources = sources;
+            // Also attach to the last user message as a fallback
+            for (let i = out.length - 1; i >= 0; i--) {
+              const m = out[i];
+              if (m && m.role === "user") {
+                out[i] = { ...m, sources };
+                break;
+              }
             }
           }
           break;
@@ -445,30 +461,29 @@ export function useChat(sessionId: string | null) {
           // Attach the call's data to the current assistant message
           const p = e.payload as any;
           if (p.name === "show_related" && p.input && p.input.questions) {
-            for (let i = out.length - 1; i >= 0; i--) {
-              const m = out[i];
-              if (m && m.role === "assistant") {
-                out[i] = { ...m, related: p.input.questions };
-                break;
+            if (currentAssistant) {
+              const idx = out.indexOf(currentAssistant);
+              if (idx >= 0) {
+                const updated: ChatMessage = { ...out[idx]!, related: p.input.questions };
+                out[idx] = updated;
+                currentAssistant = updated;
               }
             }
           }
           break;
         }
         case "done": {
-          // The final done event may include sources/related at the top level
-          // and should mark the assistant message as done streaming.
           const p = e.payload as any;
           
-          // Find the last assistant message and mark it as done
+          // Mark the last assistant message as done
           for (let i = out.length - 1; i >= 0; i--) {
             const m = out[i];
             if (m && m.role === "assistant") {
               out[i] = { 
                 ...m, 
                 isStreaming: false,
-                sources: m.sources ?? p.sources, 
-                related: m.related ?? p.related 
+                sources: m.sources ?? p.sources ?? undefined, 
+                related: m.related ?? p.related ?? undefined, 
               };
               break;
             }
@@ -476,12 +491,15 @@ export function useChat(sessionId: string | null) {
           
           if (currentAssistant) {
             currentAssistant.isStreaming = false;
+            currentAssistant.sources = currentAssistant.sources ?? p.sources ?? undefined;
+            currentAssistant.related = currentAssistant.related ?? p.related ?? undefined;
             const idx = out.indexOf(currentAssistant);
             if (idx >= 0) {
               out[idx] = { ...currentAssistant };
             }
             currentAssistant = null;
           }
+          pendingSources = null;
           break;
         }
       }
