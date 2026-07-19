@@ -1,0 +1,9 @@
+# Build artifacts
+sdk/**/dist/
+sdk/**/node_modules/
+sdk/examples/chat-app/dist/
+sdk/pnpm-lock.yaml
+
+# OS
+.DS_Store
+*.swp

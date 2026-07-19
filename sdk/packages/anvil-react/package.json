@@ -1,0 +1,33 @@
+{
+  "name": "@anvil/react",
+  "version": "0.3.1",
+  "description": "Pre-built React components for Anvil",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && cp src/styles.css dist/styles.css",
+    "test": "echo 'no tests yet' && exit 0",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo 'no linter yet' && exit 0"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@anvil/client": "workspace:*",
+    "@anvil/react-headless": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0"
+  }
+}

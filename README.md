@@ -12,11 +12,23 @@
 
 **Hit it hard. It remembers.**
 
-Anvil is a Go-based autonomous agent engine. Event-sourced, resumable, with a real HTTP+SSE transport and a frontend-tool protocol that makes MCP unnecessary for UI-bound tools.
+Anvil is a Go-based autonomous agent engine that never loses state. Event-sourced, resumable, with a real HTTP+SSE transport, a co-evolved React SDK, and a frontend-tool protocol that makes MCP unnecessary for UI-bound tools.
 
-> **Status — v0.3.1 (honest version).** This README is a contract. Every claim below is backed by code + tests. Aspirational features are flagged in **the [Status](#honest-status) section at the bottom**.
+> **Status — v0.3.1.** This README is a contract. Every claim below is backed by code + tests. See [Honest Status](#honest-status-v031) at the bottom.
 
-## What's in v0.3.1
+## What's in the box
+
+| Component | Path | What it does |
+|---|---|---|
+| **Go engine** | `internal/core/` | Event-sourced loop, checkpoints, idempotent tools, sub-agents |
+| **HTTP+SSE server** | `internal/server/` | `/tasks`, `/events?since=X`, `/tool`, `/resume`, `/status` |
+| **CLI entry point** | `cmd/anvil-server/` | One binary, runnable |
+| **React SDK** | `sdk/packages/anvil-react/` | `<AnvilProvider>` + `<AnvilChat>` drop-in components |
+| **Headless hooks** | `sdk/packages/anvil-react-headless/` | Hooks for custom UIs |
+| **Framework-agnostic client** | `sdk/packages/anvil-client/` | SSE client for any framework |
+| **Example app** | `sdk/examples/chat-app/` | Vite + React demo |
+
+
 
 | Feature | Status | Code |
 |---|---|---|

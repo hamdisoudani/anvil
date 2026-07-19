@@ -1,0 +1,27 @@
+{
+  "name": "anvil-sdk",
+  "version": "0.3.1",
+  "private": true,
+  "description": "Anvil agent engine + React SDK — TypeScript workspace",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --filter chat-app dev",
+    "publish": "pnpm -r publish"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/node": "^20.0.0"
+  }
+}
