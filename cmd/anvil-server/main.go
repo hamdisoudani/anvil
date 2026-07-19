@@ -1,10 +1,14 @@
 // Anvil server entry point. A minimal HTTP server that exposes
-// the agent engine over SSE. This is what the example app talks to.
+// the agent engine over SSE, with auth, threads, and HITL.
 //
 // Usage:
 //   go run ./cmd/anvil-server
 //   # then in another terminal:
 //   cd sdk/examples/chat-app && pnpm dev
+//
+//   curl -H "Authorization: Bearer dev:user123" \
+//        -X POST http://localhost:8080/threads \
+//        -d '{"title":"my first thread"}'
 package main
 
 import (
@@ -29,8 +33,16 @@ func main() {
 		core.WithToolMap(core.DefaultTools()),
 	)
 
-	s := server.NewServer(a, nil)
+	auth := core.DevAuthenticator{}
+	threads := core.NewInMemoryThreadStore()
+
+	s := server.NewServer(a, nil, auth, threads)
 	log.Println("Anvil server listening on :8080")
-	log.Println("Try: curl -X POST http://localhost:8080/tasks -d '{\"task\":\"hello\"}' -H 'Content-Type: application/json'")
+	log.Println("")
+	log.Println("Try:")
+	log.Println(`  curl -H "Authorization: Bearer dev:user123" \`)
+	log.Println(`       -X POST http://localhost:8080/threads \`)
+	log.Println(`       -d '{"title":"hello"}'`)
+	log.Println("")
 	log.Fatal(http.ListenAndServe(":8080", s.Handler()))
 }

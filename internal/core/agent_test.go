@@ -140,7 +140,7 @@ func TestContextPacking(t *testing.T) {
 	if msgs[0].Role != "system" {
 		t.Errorf("expected first message system, got %s", msgs[0].Role)
 	}
-	if !contains(msgs[len(msgs)-1].Content, "Summary of earlier") {
+	if !stringContains(msgs[len(msgs)-1].Content, "Summary of earlier") {
 		t.Errorf("expected summary at end, got: %q", msgs[len(msgs)-1].Content)
 	}
 }
@@ -167,11 +167,11 @@ func TestParallelToolCalls(t *testing.T) {
 	}
 }
 
-func contains(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || indexOf(s, sub) >= 0)
+func stringContains(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || stringIndexOf(s, sub) >= 0)
 }
 
-func indexOf(s, sub string) int {
+func stringIndexOf(s, sub string) int {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
 			return i
