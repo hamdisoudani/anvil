@@ -356,6 +356,7 @@ export function useChat(sessionId: string | null) {
           }
           break;
         }
+        case "answer.chunk":
         case "think.chunk": {
           const delta = (e.payload as any).delta as string;
           if (!currentAssistant) {
@@ -456,15 +457,30 @@ export function useChat(sessionId: string | null) {
         }
         case "done": {
           // The final done event may include sources/related at the top level
+          // and should mark the assistant message as done streaming.
           const p = e.payload as any;
-          if (p.sources || p.related) {
-            for (let i = out.length - 1; i >= 0; i--) {
-              const m = out[i];
-              if (m && m.role === "assistant") {
-                out[i] = { ...m, sources: m.sources ?? p.sources, related: m.related ?? p.related };
-                break;
-              }
+          
+          // Find the last assistant message and mark it as done
+          for (let i = out.length - 1; i >= 0; i--) {
+            const m = out[i];
+            if (m && m.role === "assistant") {
+              out[i] = { 
+                ...m, 
+                isStreaming: false,
+                sources: m.sources ?? p.sources, 
+                related: m.related ?? p.related 
+              };
+              break;
             }
+          }
+          
+          if (currentAssistant) {
+            currentAssistant.isStreaming = false;
+            const idx = out.indexOf(currentAssistant);
+            if (idx >= 0) {
+              out[idx] = { ...currentAssistant };
+            }
+            currentAssistant = null;
           }
           break;
         }

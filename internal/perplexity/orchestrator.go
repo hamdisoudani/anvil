@@ -24,12 +24,12 @@ import (
 // this is the "what should happen" layer.
 type Orchestrator struct {
 	LLM        LLMRouter
-	WebSearch  *WebSearchTool
+	WebSearch  SearchTool
 	FetchPage  *FetchPageTool
 }
 
 // NewOrchestrator creates the agent.
-func NewOrchestrator(llm LLMRouter, ws *WebSearchTool, fp *FetchPageTool) *Orchestrator {
+func NewOrchestrator(llm LLMRouter, ws SearchTool, fp *FetchPageTool) *Orchestrator {
 	return &Orchestrator{LLM: llm, WebSearch: ws, FetchPage: fp}
 }
 

@@ -12,12 +12,23 @@
 // These flow over the same SSE channel — no MCP, no second protocol.
 package perplexity
 
+import "context"
+
 // SearchResult is one hit from web_search.
 type SearchResult struct {
-	URL     string `json:"url"`
-	Title   string `json:"title"`
-	Snippet string `json:"snippet"`
+	URL     string  `json:"url"`
+	Title   string  `json:"title"`
+	Snippet string  `json:"snippet"`
 	Score   float64 `json:"score,omitempty"`
+}
+
+// SearchTool is the interface both Brave and Tavily implement.
+// Lets the orchestrator use any search backend interchangeably.
+type SearchTool interface {
+	Name() string
+	Description() string
+	Schema() map[string]interface{}
+	Execute(ctx context.Context, args map[string]interface{}) (interface{}, error)
 }
 
 // PageContent is the result of fetch_page.

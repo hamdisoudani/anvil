@@ -206,9 +206,10 @@ export class AnvilClient {
       // SSE named events arrive as separate MessageEvent types
       es.addEventListener("session.start", handle as any);
       es.addEventListener("session.resume", handle as any);
-      es.addEventListener("think.start", handle as any);
-      es.addEventListener("think.chunk", handle as any);
-      es.addEventListener("think.end", handle as any);
+      es.addEventListener("plan.step", handle as any);
+      es.addEventListener("answer.chunk", handle as any);
+      es.addEventListener("frontend.call", handle as any);
+      es.addEventListener("sources.found", handle as any);
       es.addEventListener("tool.call", handle as any);
       es.addEventListener("tool.result", handle as any);
       es.addEventListener("checkpoint", handle as any);

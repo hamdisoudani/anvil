@@ -51,7 +51,19 @@ func main() {
 		llm = r
 	}
 
-	ws := perplexity.NewWebSearchTool()
+	// Wire up the search tool. Prefer Tavily (AI-optimized) if the key
+	// is set; fall back to Brave; else the mock search.
+	var ws perplexity.SearchTool
+	if os.Getenv("TAVILY_API_KEY") != "" {
+		ws = perplexity.NewTavilySearchTool()
+		log.Printf("🔍 Using Tavily search (AI-optimized)")
+	} else if os.Getenv("BRAVE_API_KEY") != "" {
+		ws = perplexity.NewWebSearchTool()
+		log.Printf("🔍 Using Brave search")
+	} else {
+		ws = perplexity.NewWebSearchTool()
+		log.Printf("🔍 Using mock search (no API key)")
+	}
 	fp := perplexity.NewFetchPageTool()
 	orch := perplexity.NewOrchestrator(llm, ws, fp)
 
