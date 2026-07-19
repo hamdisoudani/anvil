@@ -156,6 +156,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	case strings.HasPrefix(path, "/app"):
 		h.handleApp(w, r)
+	case path == "/preview" || path == "/preview/":
+		// Static HTML preview (no JS required) — for design review and
+		// environments where the React app can't be served.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(staticPreview)
+		return
 	case path == "/" || path == "/index.html":
 		// Redirect to the React app
 		http.Redirect(w, r, "/app/", http.StatusTemporaryRedirect)

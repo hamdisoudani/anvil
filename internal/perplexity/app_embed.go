@@ -12,6 +12,9 @@ import (
 	"strings"
 )
 
+//go:embed static_preview.html
+var staticPreview []byte
+
 //go:embed chat_app_dist
 var chatAppDist embed.FS
 

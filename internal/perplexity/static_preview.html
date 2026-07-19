@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <title>Anvil Perplexity — Static Preview</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            border: 'hsl(var(--border))',
+            input: 'hsl(var(--input))',
+            ring: 'hsl(var(--ring))',
+            background: 'hsl(var(--background))',
+            foreground: 'hsl(var(--foreground))',
+            primary: { DEFAULT: 'hsl(var(--primary))', foreground: 'hsl(var(--primary-foreground))' },
+            secondary: { DEFAULT: 'hsl(var(--secondary))', foreground: 'hsl(var(--secondary-foreground))' },
+            muted: { DEFAULT: 'hsl(var(--muted))', foreground: 'hsl(var(--muted-foreground))' },
+            accent: { DEFAULT: 'hsl(var(--accent))', foreground: 'hsl(var(--accent-foreground))' },
+            card: { DEFAULT: 'hsl(var(--card))', foreground: 'hsl(var(--card-foreground))' },
+          },
+          borderRadius: { lg: 'var(--radius)', md: 'calc(var(--radius) - 2px)', sm: 'calc(var(--radius) - 4px)' },
+        },
+      },
+    }
+  </script>
+  <style>
+    :root {
+      --background: 0 0% 7%;
+      --foreground: 0 0% 91%;
+      --card: 0 0% 9%;
+      --card-foreground: 0 0% 91%;
+      --primary: 217 91% 60%;
+      --primary-foreground: 0 0% 7%;
+      --secondary: 0 0% 14%;
+      --secondary-foreground: 0 0% 91%;
+      --muted: 0 0% 14%;
+      --muted-foreground: 0 0% 45%;
+      --accent: 217 91% 60%;
+      --accent-foreground: 0 0% 7%;
+      --destructive: 0 84% 60%;
+      --destructive-foreground: 0 0% 91%;
+      --border: 0 0% 15%;
+      --input: 0 0% 15%;
+      --ring: 217 91% 60%;
+      --radius: 0.75rem;
+    }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  </style>
+</head>
+<body class="h-full bg-background text-foreground antialiased">
+  <div class="flex h-screen flex-col">
+    <header class="flex h-12 items-center justify-between border-b px-4 bg-card">
+      <div class="flex items-center gap-2">
+        <div class="flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </div>
+        <span class="text-sm font-medium">Anvil</span>
+        <span class="text-xs text-muted-foreground">Perplexity</span>
+      </div>
+      <button class="inline-flex items-center rounded-md text-xs font-medium h-8 px-3 hover:bg-accent">
+        <svg xmlns="http://www.w3.org/2000/svg" class="mr-1.5 h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        New thread
+      </button>
+    </header>
+    <main class="flex-1 overflow-y-auto">
+      <div class="mx-auto max-w-3xl px-6 py-16 flex flex-col items-center text-center space-y-8">
+        <div class="space-y-3">
+          <h1 class="text-4xl font-semibold tracking-tight">Where knowledge begins</h1>
+          <p class="text-sm text-muted-foreground">
+            Ask anything. Anvil searches the web, reads the top sources, and writes a cited answer.
+          </p>
+        </div>
+        <div class="w-full max-w-2xl flex items-center gap-1.5 justify-center">
+          <button class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium bg-foreground text-background">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            Web
+          </button>
+          <button class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 6 3 6 3s3 0 6-3v-5"/></svg>
+            Academic
+          </button>
+          <button class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8M15 18h-5M10 6h8v4h-8z"/></svg>
+            News
+          </button>
+          <button class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Social
+          </button>
+        </div>
+        <div class="w-full max-w-3xl grid grid-cols-1 md:grid-cols-2 gap-2 pt-4">
+          <button class="text-left p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm">What are the best practices for gRPC in microservices?</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </button>
+          <button class="text-left p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm">Compare PostgreSQL and MongoDB for time-series data</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </button>
+          <button class="text-left p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm">Explain event sourcing like I'm five</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </button>
+          <button class="text-left p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm">Latest breakthroughs in AI agents 2025</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </button>
+          <button class="text-left p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm">How does Rust's ownership system work?</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </button>
+          <button class="text-left p-3 rounded-lg border bg-card hover:bg-accent/30 hover:border-foreground/20 transition-colors group">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm">Compare Next.js, Remix, and Astro for production</span>
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
+          </button>
+        </div>
+      </div>
+    </main>
+    <div class="border-t bg-background p-4">
+      <form class="mx-auto max-w-3xl">
+        <div class="rounded-2xl border shadow-sm bg-card">
+          <div class="flex items-end gap-2 p-3">
+            <textarea placeholder="Ask anything…" rows="1" class="flex-1 min-h-[24px] max-h-48 resize-none border-0 shadow-none focus:outline-none focus:ring-0 px-1 bg-transparent text-sm"></textarea>
+            <div class="flex items-center gap-1 border-l pl-2 pr-1">
+              <button type="button" class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-foreground text-background">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                Web
+              </button>
+              <button type="button" disabled class="inline-flex items-center justify-center rounded-full h-8 w-8 bg-foreground text-background opacity-50">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <p class="mt-2 text-center text-[10px] text-muted-foreground">Anvil can make mistakes. Verify important info.</p>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
