@@ -23,6 +23,8 @@ type StreamingBus struct {
 	subscribers map[string]map[chan Event]struct{}
 	history     map[string][]Event // sessionID -> recent events (replay buffer)
 	histSize    int
+	// Thread → sessions index, for multi-run history.
+	threads map[string][]string // threadID -> [sessionID1, sessionID2, ...]
 }
 
 // ReplayBufferSize is how many events to keep per session for late joiners.
@@ -33,7 +35,25 @@ func NewStreamingBus() *StreamingBus {
 		subscribers: make(map[string]map[chan Event]struct{}),
 		history:     make(map[string][]Event),
 		histSize:    ReplayBufferSize,
+		threads:     make(map[string][]string),
 	}
+}
+
+// AddSessionToThread records that a session belongs to a thread.
+// Used for "list previous runs" and "resume a conversation".
+func (b *StreamingBus) AddSessionToThread(threadID, sessionID string) {
+	b.mu.Lock()
+	b.threads[threadID] = append(b.threads[threadID], sessionID)
+	b.mu.Unlock()
+}
+
+// ThreadSessions returns the sessions in a thread, in order.
+func (b *StreamingBus) ThreadSessions(threadID string) []string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	out := make([]string, len(b.threads[threadID]))
+	copy(out, b.threads[threadID])
+	return out
 }
 
 func (b *StreamingBus) Subscribe(sessionID string) chan Event {
@@ -129,10 +149,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleAsk starts a new search session.
+// handleAsk starts a new search session. Optional thread_id continues an
+// existing thread; without one, a new thread is created.
 func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Question string `json:"question"`
+		ThreadID string `json:"thread_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -143,18 +165,27 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	threadID := req.ThreadID
+	if threadID == "" {
+		threadID = uuidNew() // new thread per question (browser keeps history)
+	}
 	sessionID := uuidNew()
-	go h.runSearch(r.Context(), sessionID, req.Question)
+	h.Bus.AddSessionToThread(threadID, sessionID)
+	// Use a fresh background context — the orchestrator must outlive the
+	// HTTP request that started it (otherwise a client disconnect cancels
+	// the LLM call mid-stream).
+	go h.runSearch(context.Background(), sessionID, threadID, req.Question)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
+		"thread_id":  threadID,
 		"session_id": sessionID,
 		"stream_url": "/perplexity/stream/" + sessionID,
 	})
 }
 
 // runSearch runs the orchestrator and publishes events to the bus.
-func (h *Handler) runSearch(ctx context.Context, sessionID, question string) {
+func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question string) {
 	result, err := h.Orchestrator.Run(ctx, question, func(e Event) {
 		h.Bus.Publish(sessionID, e)
 	})
@@ -163,13 +194,14 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, question string) {
 		h.Bus.Publish(sessionID, Event{Type: EventError, Payload: map[string]interface{}{"message": err.Error()}})
 		return
 	}
-	log.Printf("session %s: done (answer=%d chars, sources=%d, related=%d)",
-		sessionID, len(result.Answer), len(result.Sources), len(result.Related))
+	log.Printf("session %s (thread %s): done (answer=%d chars, sources=%d, related=%d)",
+		sessionID, threadID, len(result.Answer), len(result.Sources), len(result.Related))
 	h.Bus.Publish(sessionID, Event{Type: EventDone, Payload: map[string]interface{}{
 		"answer":     result.Answer,
 		"sources":    result.Sources,
 		"related":    result.Related,
 		"plan":       result.Plan,
+		"thread_id":  threadID,
 		"session_id": sessionID,
 	}})
 }

@@ -1,18 +1,18 @@
 // Perplexity clone server entry point.
 //
+// Supports any OpenAI-compatible LLM (NVIDIA NIM, OpenAI, Together, Groq, etc).
+//
 // Usage:
-//   export ANTHROPIC_API_KEY=...
-//   export BRAVE_API_KEY=...     # optional, falls back to mock
+//   export OPENAI_API_KEY=***         # required
+//   export OPENAI_BASE_URL=...        # optional (default: NVIDIA NIM)
+//   export OPENAI_MODEL=...           # optional (default: meta/llama-3.1-70b-instruct)
+//   export BRAVE_API_KEY=...          # optional, falls back to mock search
 //   go run ./cmd/perplexity-server
 //
 //   open http://localhost:8081
 //
-// Docker:
-//   docker build -f Dockerfile.perplexity -t perplexity .
-//   docker run -p 8081:8081 -e ANTHROPIC_API_KEY=*** perplexity
-//
-// Vercel/Railway/Fly:
-//   See vercel.json / docker-compose.perplexity.yml / Dockerfile.perplexity
+// Docker / Vercel / Railway / Fly: see Dockerfile.perplexity and
+// docker-compose.perplexity.yml in the repo root.
 package main
 
 import (
@@ -24,18 +24,37 @@ import (
 )
 
 func main() {
-	if os.Getenv("ANTHROPIC_API_KEY") == "" {
-		log.Println("WARNING: ANTHROPIC_API_KEY not set. The LLM step will fail.")
-		log.Println("Set it to enable real answers: export ANTHROPIC_API_KEY=sk-...")
+	// Check for an LLM provider
+	if os.Getenv("ANTHROPIC_API_KEY") == "" && os.Getenv("OPENAI_API_KEY") == "" {
+		log.Println("WARNING: Neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is set.")
+		log.Println("Set one of:")
+		log.Println("  export OPENAI_API_KEY=***  # for NVIDIA NIM, OpenAI, Together, etc.")
+		log.Println("  export ANTHROPIC_API_KEY=***  # for Anthropic Claude")
+		log.Println("The LLM step will fail without one.")
 	}
 
-	// Wire up the agent
-	llm := perplexity.NewAnthropicRouter()
+	// Use the OpenAI-compatible router (works with NVIDIA NIM, OpenAI, etc.)
+	// If ANTHROPIC_API_KEY is set and OPENAI_API_KEY is not, fall back to Anthropic.
+	var llm perplexity.LLMRouter
+	if os.Getenv("OPENAI_API_KEY") != "" {
+		r := perplexity.NewOpenAICompatibleRouter()
+		log.Printf("🤖 Using OpenAI-compatible: model=%s base=%s", r.Model, r.BaseURL)
+		llm = r
+	} else if os.Getenv("ANTHROPIC_API_KEY") != "" {
+		r := perplexity.NewAnthropicRouter()
+		log.Printf("🤖 Using Anthropic: model=%s", r.Model)
+		llm = r
+	} else {
+		// Both missing — fall back to OpenAI router anyway; it'll error gracefully
+		r := perplexity.NewOpenAICompatibleRouter()
+		log.Printf("🤖 Using OpenAI-compatible (no key set — will fail): model=%s", r.Model)
+		llm = r
+	}
+
 	ws := perplexity.NewWebSearchTool()
 	fp := perplexity.NewFetchPageTool()
 	orch := perplexity.NewOrchestrator(llm, ws, fp)
 
-	// The HTTP handler
 	handler := perplexity.NewHandler(orch)
 
 	port := os.Getenv("PORT")
