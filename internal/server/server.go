@@ -262,10 +262,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request, sessionID 
 		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
+	// Use the safe accessor — the loop goroutine mutates State, and
+	// reading without the lock races (caught by `go test -race`).
+	step, subCount := sess.ReadState()
 	resp := map[string]interface{}{
 		"session_id": sessionID,
-		"step":       sess.State.Step,
-		"sub_count":  len(sess.State.History),
+		"step":       step,
+		"sub_count":  subCount,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)

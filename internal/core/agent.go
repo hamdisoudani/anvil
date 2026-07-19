@@ -102,6 +102,16 @@ type Session struct {
 	done    chan struct{}
 }
 
+// ReadState safely reads the current step and history length. The HTTP
+// server (and any external observer) must use this — not read State
+// directly — because the loop goroutine mutates it. (Race-detector
+// caught this: see TestServer_Status.)
+func (s *Session) ReadState() (step int, subCount int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.State.Step, len(s.State.History)
+}
+
 // Agent is the top-level engine. One per process, runs many sessions.
 type Agent struct {
 	store       EventStore
