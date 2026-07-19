@@ -1,0 +1,43 @@
+# Anvil Perplexity — production Dockerfile
+#
+# Multi-stage build: build the Go binary, then copy into a minimal image.
+# 
+# Build:    docker build -t perplexity .
+# Run:      docker run -p 8081:8081 -e ANTHROPIC_API_KEY=*** perplexity
+# Or compose:
+#   docker compose up
+#
+# Deploy to: Railway, Fly.io, Render, GCP Cloud Run, AWS Fargate,
+# DigitalOcean App Platform, or any Docker host.
+
+# ── Build stage ────────────────────────────────────────────────
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+
+# Cache deps
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Build the binary
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/perplexity ./cmd/perplexity-server
+
+# ── Runtime stage ─────────────────────────────────────────────
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata
+WORKDIR /app
+COPY --from=build /out/perplexity /app/perplexity
+
+# Vercel / Railway / Fly default to 8080; we use 8081 for clarity
+ENV PORT=8081
+EXPOSE 8081
+
+# Healthcheck for orchestrators
+HEALTHCHECK --interval=30s --timeout=3s \
+  CMD wget -q -O - http://localhost:8081/ > /dev/null || exit 1
+
+# Run as non-root
+RUN adduser -D -u 1000 anvil
+USER anvil
+
+ENTRYPOINT ["/app/perplexity"]

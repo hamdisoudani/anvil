@@ -5,20 +5,19 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/google/uuid"
+	"sync"
 )
 
-// Orchestrator is the Perplexity-style agent.
-// It takes a user question and produces a cited answer.
+// Run executes the full search + answer flow using a real search plan.
 //
-// Flow:
-//   1. Search the web for the question
-//   2. Fetch the top 4 results
-//   3. LLM reads the pages, writes an answer with [N] citations
-//   4. Extract the citations (which [N]s were used)
-//   5. Generate 3 follow-up questions
-//   6. Stream the answer to the frontend
+// New flow (Perplexity-style):
+//   1. CLASSIFY + DECOMPOSE + PLAN (one LLM call): produces SearchPlan
+//   2. EXECUTE PLAN: parallel searches (one per sub-query, respecting deps)
+//   3. FILTER: score, dedupe, rank results
+//   4. FETCH: read the top pages
+//   5. SYNTHESIZE: LLM writes the answer with [N] citations
+//   6. EXTRACT citations used
+//   7. GENERATE follow-up questions
 //
 // State lives in the ThreadState (plan, sources) and is broadcast
 // via state patches. The agent loop is the one from core/agent.go;
@@ -34,130 +33,32 @@ func NewOrchestrator(llm LLMRouter, ws *WebSearchTool, fp *FetchPageTool) *Orche
 	return &Orchestrator{LLM: llm, WebSearch: ws, FetchPage: fp}
 }
 
-// LLMRouter is the interface we need. The engine's core.LLMRouter has a
-// different signature; this is a smaller interface for our use.
+// LLMRouter is the interface we need.
 type LLMRouter interface {
 	Stream(ctx context.Context, req LLMRequest, onDelta func(string)) (LLMResponse, error)
+}
+
+// EventType is the discriminator for the events we emit.
+type EventType string
+
+const (
+	EventPlanStep     EventType = "plan.step"
+	EventAnswerChunk  EventType = "answer.chunk"
+	EventFrontendCall EventType = "frontend.call"
+	EventSourcesFound EventType = "sources.found"
+	EventError        EventType = "error"
+	EventDone         EventType = "done"
+)
+
+// Event is what the orchestrator publishes.
+type Event struct {
+	Type    EventType              `json:"type"`
+	Payload map[string]interface{} `json:"payload"`
 }
 
 // Plan tracks what the agent is doing. Mutated as it goes.
 type Plan struct {
 	Steps []PlanStepInfo
-}
-
-// Run executes the full search + answer flow.
-// Returns the answer text (with [N] citations), the sources list,
-// and the related questions.
-//
-// onEvent is called for each major event (frontend tools, plan steps).
-// Pass nil for tests.
-func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(eventType string, payload map[string]interface{})) (*Result, error) {
-	result := &Result{Question: question, Sources: []Source{}, Related: []string{}}
-
-	// Step 1: emit the initial plan
-	if onEvent != nil {
-		onEvent("plan.step", map[string]interface{}{"id": 1, "intent": "Search the web", "status": "running"})
-	}
-	if onEvent != nil {
-		onEvent("frontend.call", map[string]interface{}{"name": ToolShowSearchProgress, "input": map[string]interface{}{"query": question}})
-	}
-
-	searchResults, err := o.WebSearch.Execute(ctx, map[string]interface{}{"query": question, "count": 8})
-	if err != nil {
-		return nil, fmt.Errorf("search: %w", err)
-	}
-	results, _ := searchResults.([]SearchResult)
-	if len(results) == 0 {
-		return nil, fmt.Errorf("no search results for: %s", question)
-	}
-
-	// Build sources list (numbered 1..N)
-	sources := make([]Source, len(results))
-	for i, r := range results {
-		domain := r.URL
-		if m := regexp.MustCompile(`^https?://([^/]+)/?`).FindStringSubmatch(r.URL); len(m) > 1 {
-			domain = m[1]
-		}
-		sources[i] = Source{ID: i + 1, URL: r.URL, Title: r.Title, Domain: domain, Used: false}
-	}
-	result.Sources = sources
-
-	// Emit the sources to the frontend so the sidebar populates immediately
-	if onEvent != nil {
-		onEvent("frontend.call", map[string]interface{}{
-			"name":  ToolRenderSources,
-			"input": map[string]interface{}{"sources": sources},
-		})
-	}
-
-	// Step 2: fetch top 4
-	if onEvent != nil {
-		onEvent("plan.step", map[string]interface{}{"id": 2, "intent": "Read top sources", "status": "running"})
-	}
-	pages := []PageContent{}
-	for i, r := range results {
-		if i >= 4 {
-			break
-		}
-		if onEvent != nil {
-			onEvent("plan.step", map[string]interface{}{
-				"id":     2,
-				"detail": "Reading " + r.URL,
-				"status": "running",
-			})
-		}
-		page, err := o.FetchPage.Execute(ctx, map[string]interface{}{"url": r.URL})
-		if err != nil {
-			continue // skip failed fetches
-		}
-		p, _ := page.(PageContent)
-		if p.Text != "" {
-			pages = append(pages, p)
-		}
-	}
-	if len(pages) == 0 {
-		return nil, fmt.Errorf("could not fetch any of the search results")
-	}
-
-	// Step 3: synthesize with the LLM
-	if onEvent != nil {
-		onEvent("plan.step", map[string]interface{}{"id": 3, "intent": "Writing the answer", "status": "running"})
-	}
-	answer, err := o.synthesize(ctx, question, sources, pages, onEvent)
-	if err != nil {
-		return nil, fmt.Errorf("synthesize: %w", err)
-	}
-	result.Answer = answer
-
-	// Step 4: extract which sources were cited
-	used := extractCitations(answer)
-	for i := range sources {
-		if _, ok := used[sources[i].ID]; ok {
-			sources[i].Used = true
-		}
-	}
-	result.Sources = sources
-
-	// Step 5: generate related questions
-	if onEvent != nil {
-		onEvent("plan.step", map[string]interface{}{"id": 4, "intent": "Generating related questions", "status": "running"})
-	}
-	related, err := o.relatedQuestions(ctx, question, answer)
-	if err == nil {
-		result.Related = related
-		if onEvent != nil {
-			onEvent("frontend.call", map[string]interface{}{
-				"name":  ToolShowRelated,
-				"input": map[string]interface{}{"questions": related},
-			})
-		}
-	}
-
-	// Step 6: emit done
-	if onEvent != nil {
-		onEvent("plan.step", map[string]interface{}{"id": 5, "intent": "Done", "status": "done"})
-	}
-	return result, nil
 }
 
 // Result is what Run returns.
@@ -166,11 +67,215 @@ type Result struct {
 	Answer   string
 	Sources  []Source
 	Related  []string
+	Plan     *SearchPlan
+}
+
+// Run executes the full flow.
+func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Event)) (*Result, error) {
+	result := &Result{Question: question, Sources: []Source{}, Related: []string{}}
+
+	emit := func(t EventType, p map[string]interface{}) {
+		if onEvent != nil {
+			onEvent(Event{Type: t, Payload: p})
+		}
+	}
+
+	// ── Step 1: PLAN ────────────────────────────────────────────────
+	emit(EventPlanStep, map[string]interface{}{"id": 1, "intent": "Planning the search", "status": "running"})
+	plan, err := o.PlanSearch(ctx, question)
+	if err != nil {
+		// Fall back to a single-query plan so the demo still works
+		plan = &SearchPlan{
+			NeedsSearch: true,
+			Reason:      "planner failed, falling back to single query",
+			SubQueries: []SubQuery{{
+				ID: "q1", Intent: "search the question", Query: question,
+				Source: SourceWeb, FetchTop: 4,
+			}},
+		}
+	}
+	emit(EventPlanStep, map[string]interface{}{
+		"id": 1, "intent": "Plan built", "status": "done",
+		"detail": fmt.Sprintf("%d sub-queries", len(plan.SubQueries)),
+	})
+
+	// Emit the plan to the frontend so the user sees the structure
+	emit(EventFrontendCall, map[string]interface{}{
+		"name":  ToolShowPlanStep,
+		"input": plan,
+	})
+
+	// If no search needed (chat-only), just synthesize directly
+	if !plan.NeedsSearch || len(plan.SubQueries) == 0 {
+		return o.synthesizeChatOnly(ctx, question, plan, onEvent)
+	}
+
+	// ── Step 2: EXECUTE (parallel) ──────────────────────────────────
+	emit(EventPlanStep, map[string]interface{}{"id": 2, "intent": "Searching the web", "status": "running"})
+
+	// Topological sort by DependsOn, then run in waves
+	waves := topoSort(plan.SubQueries)
+	allResults := make(map[string][]SearchResult) // by query id
+
+	for _, wave := range waves {
+		// Run all queries in this wave in parallel
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		for _, q := range wave {
+			q := q
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				emit(EventPlanStep, map[string]interface{}{
+					"id": 2, "detail": "Searching: " + q.Query, "status": "running",
+				})
+				results, err := o.WebSearch.Execute(ctx, map[string]interface{}{
+					"query": q.Query, "count": 8,
+				})
+				if err != nil {
+					return
+				}
+				rs, _ := results.([]SearchResult)
+				mu.Lock()
+				allResults[q.ID] = rs
+				mu.Unlock()
+			}()
+		}
+		wg.Wait()
+	}
+
+	// Union, dedupe, score
+	allHits := []SearchResult{}
+	seen := map[string]bool{}
+	for _, rs := range allResults {
+		for _, r := range rs {
+			if seen[r.URL] {
+				continue
+			}
+			seen[r.URL] = true
+			allHits = append(allHits, r)
+		}
+	}
+
+	// Build sources list (numbered 1..N)
+	sources := make([]Source, 0, len(allHits))
+	for i, r := range allHits {
+		domain := r.URL
+		if m := regexp.MustCompile(`^https?://([^/]+)/?`).FindStringSubmatch(r.URL); len(m) > 1 {
+			domain = m[1]
+		}
+		sources = append(sources, Source{
+			ID:     i + 1,
+			URL:    r.URL,
+			Title:  r.Title,
+			Domain: domain,
+			Used:   false,
+		})
+	}
+	result.Sources = sources
+
+	// Emit the sources to the frontend
+	emit(EventSourcesFound, map[string]interface{}{"sources": sources})
+	emit(EventFrontendCall, map[string]interface{}{
+		"name":  ToolRenderSources,
+		"input": map[string]interface{}{"sources": sources},
+	})
+
+	// ── Step 3: FETCH top pages ─────────────────────────────────────
+	emit(EventPlanStep, map[string]interface{}{"id": 3, "intent": "Reading the top sources", "status": "running"})
+
+	// Decide which pages to fetch: top N from each sub-query's fetch_top
+	pages := []PageContent{}
+	pagesToFetch := pickTopPages(sources, plan.SubQueries, allResults, 6)
+	for _, url := range pagesToFetch {
+		emit(EventPlanStep, map[string]interface{}{
+			"id": 3, "detail": "Reading " + url, "status": "running",
+		})
+		page, err := o.FetchPage.Execute(ctx, map[string]interface{}{"url": url})
+		if err != nil {
+			continue
+		}
+		p, _ := page.(PageContent)
+		if p.Text != "" {
+			pages = append(pages, p)
+		}
+	}
+	if len(pages) == 0 {
+		// Fall back to the search snippets if all fetches failed
+		pages = snippetsToPages(allHits, sources)
+	}
+
+	// ── Step 4: SYNTHESIZE ──────────────────────────────────────────
+	emit(EventPlanStep, map[string]interface{}{"id": 4, "intent": "Writing the answer", "status": "running"})
+	answer, err := o.synthesize(ctx, question, sources, pages, plan.SynthesizeHint, onEvent)
+	if err != nil {
+		return nil, fmt.Errorf("synthesize: %w", err)
+	}
+	result.Answer = answer
+
+	// Mark which sources were cited
+	used := extractCitations(answer)
+	for i := range sources {
+		if _, ok := used[sources[i].ID]; ok {
+			sources[i].Used = true
+		}
+	}
+	result.Sources = sources
+
+	// ── Step 5: RELATED questions ───────────────────────────────────
+	emit(EventPlanStep, map[string]interface{}{"id": 5, "intent": "Generating related questions", "status": "running"})
+	related, err := o.relatedQuestions(ctx, question, answer)
+	if err == nil {
+		result.Related = related
+		emit(EventFrontendCall, map[string]interface{}{
+			"name":  ToolShowRelated,
+			"input": map[string]interface{}{"questions": related},
+		})
+	}
+
+	emit(EventPlanStep, map[string]interface{}{"id": 6, "intent": "Done", "status": "done"})
+	return result, nil
+}
+
+// synthesizeChatOnly handles the case where the question doesn't need search.
+func (o *Orchestrator) synthesizeChatOnly(ctx context.Context, question string, plan *SearchPlan, onEvent func(Event)) (*Result, error) {
+	result := &Result{Question: question, Sources: []Source{}, Related: []string{}}
+	emit := func(t EventType, p map[string]interface{}) {
+		if onEvent != nil {
+			onEvent(Event{Type: t, Payload: p})
+		}
+	}
+	emit(EventPlanStep, map[string]interface{}{"id": 2, "intent": "Generating answer", "status": "running"})
+	req := LLMRequest{
+		SystemPrompt: "You are a helpful research assistant. Answer the user's question directly and concisely.",
+		Messages:     []Message{{Role: "user", Content: question}},
+		MaxTokens:    1500,
+	}
+	var delta strings.Builder
+	resp, err := o.LLM.Stream(ctx, req, func(text string) {
+		delta.WriteString(text)
+		emit(EventAnswerChunk, map[string]interface{}{"delta": text})
+	})
+	if err != nil {
+		return nil, err
+	}
+	answer := delta.String()
+	if answer == "" {
+		answer = resp.Content
+	}
+	result.Answer = answer
+	emit(EventPlanStep, map[string]interface{}{"id": 3, "intent": "Done", "status": "done"})
+	return result, nil
 }
 
 // synthesize asks the LLM to write the answer with [N] citations.
-func (o *Orchestrator) synthesize(ctx context.Context, question string, sources []Source, pages []PageContent, onEvent func(string, map[string]interface{})) (string, error) {
-	// Build the context for the LLM
+func (o *Orchestrator) synthesize(ctx context.Context, question string, sources []Source, pages []PageContent, hint string, onEvent func(Event)) (string, error) {
+	emit := func(t EventType, p map[string]interface{}) {
+		if onEvent != nil {
+			onEvent(Event{Type: t, Payload: p})
+		}
+	}
+
 	var sb strings.Builder
 	sb.WriteString("Question: ")
 	sb.WriteString(question)
@@ -185,36 +290,26 @@ func (o *Orchestrator) synthesize(ctx context.Context, question string, sources 
 		sb.WriteString("\n\n")
 	}
 
-	prompt := `You are a research assistant. Answer the user's question using ONLY the provided sources. Cite sources inline using [N] notation where N is the source number. Be concise but complete. If sources disagree, note the disagreement. After the answer, list all sources you cited in a "References:" line.
-
-Example format:
-The answer text with [1] and [2] inline citations.
-
-References:
-[1] Title
-[2] Title`
+	systemPrompt := `You are a research assistant. Answer the user's question using ONLY the provided sources. Cite sources inline using [N] notation. Be concise but complete. If sources disagree, note the disagreement.`
+	if hint != "" {
+		systemPrompt += "\n\nStyle guidance: " + hint
+	}
 
 	req := LLMRequest{
-		SystemPrompt: prompt,
-		Messages: []Message{
-			{Role: "user", Content: sb.String()},
-		},
-		MaxTokens: 1500,
+		SystemPrompt: systemPrompt,
+		Messages:     []Message{{Role: "user", Content: sb.String()}},
+		MaxTokens:    2000,
 	}
 
 	var delta strings.Builder
 	resp, err := o.LLM.Stream(ctx, req, func(text string) {
 		delta.WriteString(text)
-		if onEvent != nil {
-			// Stream tokens to the frontend
-			onEvent("answer.chunk", map[string]interface{}{"delta": text})
-		}
+		emit(EventAnswerChunk, map[string]interface{}{"delta": text})
 	})
 	if err != nil {
 		return "", err
 	}
 	_ = resp
-	// Use the streamed result if available, else the response
 	answer := delta.String()
 	if answer == "" {
 		answer = resp.Content
@@ -268,5 +363,96 @@ func extractCitations(answer string) map[int]bool {
 	return found
 }
 
-// ensure uuid import used
-var _ = uuid.New
+// topoSort groups sub-queries into "waves" by their dependencies.
+// All queries in the same wave can run in parallel.
+// Queries with no dependencies are in wave 0.
+func topoSort(queries []SubQuery) [][]SubQuery {
+	byID := make(map[string]SubQuery)
+	for _, q := range queries {
+		byID[q.ID] = q
+	}
+	waves := [][]SubQuery{}
+	placed := make(map[string]bool)
+	for len(placed) < len(queries) {
+		wave := []SubQuery{}
+		for _, q := range queries {
+			if placed[q.ID] {
+				continue
+			}
+			// All deps must be placed
+			ok := true
+			for _, dep := range q.DependsOn {
+				if !placed[dep] {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				wave = append(wave, q)
+			}
+		}
+		if len(wave) == 0 {
+			// Cycle or unknown dep — just put the remaining ones in
+			for _, q := range queries {
+				if !placed[q.ID] {
+					wave = append(wave, q)
+					break
+				}
+			}
+		}
+		for _, q := range wave {
+			placed[q.ID] = true
+		}
+		waves = append(waves, wave)
+	}
+	return waves
+}
+
+// pickTopPages selects which URLs to actually fetch.
+// For each sub-query, take the top fetch_top results. Dedup.
+func pickTopPages(sources []Source, subQueries []SubQuery, resultsByID map[string][]SearchResult, maxTotal int) []string {
+	seen := map[string]bool{}
+	urls := []string{}
+	// For each sub-query, prefer its own results
+	for _, q := range subQueries {
+		rs := resultsByByID(resultsByID, q.ID)
+		for i, r := range rs {
+			if i >= q.FetchTop {
+				break
+			}
+			if seen[r.URL] {
+				continue
+			}
+			seen[r.URL] = true
+			urls = append(urls, r.URL)
+			if len(urls) >= maxTotal {
+				return urls
+			}
+		}
+	}
+	return urls
+}
+
+// resultsByByID is a small helper that handles nil maps.
+func resultsByByID(m map[string][]SearchResult, id string) []SearchResult {
+	if m == nil {
+		return nil
+	}
+	return m[id]
+}
+
+// snippetsToPages is a fallback when all fetches fail — use the search snippets.
+func snippetsToPages(hits []SearchResult, sources []Source) []PageContent {
+	out := make([]PageContent, 0, len(hits))
+	for i, h := range hits {
+		if i >= 4 {
+			break
+		}
+		out = append(out, PageContent{
+			URL:   h.URL,
+			Title: h.Title,
+			Text:  h.Snippet,
+		})
+	}
+	return out
+}
