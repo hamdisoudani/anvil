@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -207,7 +208,7 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 		Task     string `json:"task,omitempty"`
 		ThreadID string `json:"thread_id,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
 		return
 	}
@@ -227,7 +228,7 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	sessionID := uuidNew()
 	h.Bus.AddSessionToThread(threadID, sessionID)
 	// FIX BUG 1: use the resolved `question` variable, not req.Question
-	go h.runSearch(context.Background(), sessionID, threadID, question)
+	go h.runSearch(r.Context(), sessionID, threadID, question)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -305,7 +306,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "event: ready\ndata: {\"session_id\":\"%s\"}\n\n", sessionID)
 	flusher.Flush()
 
-	eventID := skipCount
+	eventID := 0
 
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()

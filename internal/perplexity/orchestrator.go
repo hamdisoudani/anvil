@@ -8,6 +8,9 @@ import (
 	"sync"
 )
 
+// CompileOnce — avoid recompiling inside hot loops.
+var domainURLRe = regexp.MustCompile(`^https?://([^/]+)/?`)
+
 // Run executes the full search + answer flow using a real search plan.
 //
 // New flow (Perplexity-style):
@@ -134,13 +137,19 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 				emit(EventPlanStep, map[string]interface{}{
 					"id": 2, "detail": "Searching: " + q.Query, "status": "running",
 				})
-				results, err := o.WebSearch.Execute(ctx, map[string]interface{}{
-					"query": q.Query, "count": 8,
-				})
-				if err != nil {
-					return
-				}
-				rs, _ := results.([]SearchResult)
+								results, err := o.WebSearch.Execute(ctx, map[string]interface{}{
+								"query": q.Query, "count": 8,
+								})
+								if err != nil {
+								emit(EventError, map[string]interface{}{
+								"message": "search failed: " + err.Error(),
+								})
+								return
+								}
+								rs := []SearchResult{}
+								if r, ok := results.([]SearchResult); ok {
+								rs = r
+								}
 				mu.Lock()
 				allResults[q.ID] = rs
 				mu.Unlock()
@@ -166,7 +175,7 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	sources := make([]Source, 0, len(allHits))
 	for i, r := range allHits {
 		domain := r.URL
-		if m := regexp.MustCompile(`^https?://([^/]+)/?`).FindStringSubmatch(r.URL); len(m) > 1 {
+		if m := domainURLRe.FindStringSubmatch(r.URL); len(m) > 1 {
 			domain = m[1]
 		}
 		sources = append(sources, Source{
@@ -192,19 +201,30 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	// Decide which pages to fetch: top N from each sub-query's fetch_top
 	pages := []PageContent{}
 	pagesToFetch := pickTopPages(sources, plan.SubQueries, allResults, 6)
-	for _, url := range pagesToFetch {
-		emit(EventPlanStep, map[string]interface{}{
-			"id": 3, "detail": "Reading " + url, "status": "running",
-		})
-		page, err := o.FetchPage.Execute(ctx, map[string]interface{}{"url": url})
-		if err != nil {
-			continue
-		}
-		p, _ := page.(PageContent)
-		if p.Text != "" {
-			pages = append(pages, p)
-		}
+	// Parallel page fetching (independent I/O tasks)
+	var fetchMu sync.Mutex
+	var fetchWg sync.WaitGroup
+	for _, u := range pagesToFetch {
+		url := u
+		fetchWg.Add(1)
+		go func() {
+			defer fetchWg.Done()
+			emit(EventPlanStep, map[string]interface{}{
+				"id": 3, "detail": "Reading " + url, "status": "running",
+			})
+			page, err := o.FetchPage.Execute(ctx, map[string]interface{}{"url": url})
+			if err != nil {
+				return
+			}
+			p, ok := page.(PageContent)
+			if ok && p.Text != "" {
+				fetchMu.Lock()
+				pages = append(pages, p)
+				fetchMu.Unlock()
+			}
+		}()
 	}
+	fetchWg.Wait()
 	if len(pages) == 0 {
 		// Fall back to the search snippets if all fetches failed
 		pages = snippetsToPages(allHits, sources)
