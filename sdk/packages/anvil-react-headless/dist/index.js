@@ -10,11 +10,261 @@ import { jsx as _jsx } from "react/jsx-runtime";
  *   - useChat(): the high-level chat-style hook (events → messages)
  *   - useFrontendTool(): declare a tool the agent can call in the browser
  *   - useAnvilEvent(): subscribe to a specific event type
+ *   - useAgentState(): real-time agent thinking state machine
+ *   - reduceAgentState() / reduceAgentStateFromEvents(): pure reducers
  *
  * Designed to be UI-agnostic. Bring your own components.
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, } from "react";
 import { AnvilClient, } from "@anvil/client";
+// ── Initial state ─────────────────────────────────────────────────
+const INITIAL_AGENT_STATE = {
+    phase: "idle",
+    task: null,
+    sessionId: null,
+    planSteps: [],
+    plan: null,
+    sources: [],
+    searchesDone: 0,
+    pagesRead: 0,
+    currentStepIndex: -1,
+    currentAnswer: "",
+    isStreaming: false,
+    error: null,
+    doneReceived: false,
+};
+// ── Pure reducers (framework-agnostic data layer) ─────────────────
+/**
+ * Process a single Anvil event through the agent state reducer.
+ *
+ * This is a **pure function** — no React, no side-effects. You can import
+ * it to build the same state machine in Vue, Svelte, vanilla JS, or
+ * server-side renderers.
+ *
+ * @param state  The current AgentState (start with INITIAL_AGENT_STATE).
+ * @param event  A single AnvilEvent from the session stream.
+ * @returns      The next AgentState.
+ */
+export function reduceAgentState(state, event) {
+    switch (event.type) {
+        // ── session.start ───────────────────────────────────────────
+        // The agent has begun processing. Extract the task and transition
+        // to the "planning" phase.
+        case "session.start": {
+            const p = event.payload;
+            return {
+                ...INITIAL_AGENT_STATE,
+                phase: "planning",
+                task: p.task ?? state.task,
+                sessionId: event.sessionId,
+            };
+        }
+        // ── plan.step ────────────────────────────────────────────────
+        // A step in the agent's plan has started or completed.
+        // Updates existing steps (status transitions) or appends new ones.
+        case "plan.step": {
+            const step = event.payload;
+            // Update existing step or append new one
+            const existingIdx = state.planSteps.findIndex((s) => s.id === step.id);
+            const planSteps = existingIdx >= 0
+                ? state.planSteps.map((s, i) => i === existingIdx ? { ...s, ...step } : s)
+                : [...state.planSteps, step];
+            const currentStepIndex = existingIdx >= 0 ? existingIdx : planSteps.length - 1;
+            // Derive phase from the currently running step's intent
+            const runningStep = planSteps.find((s) => s.status === "running");
+            let phase = state.phase;
+            if (runningStep) {
+                const intent = runningStep.intent.toLowerCase();
+                if (intent.includes("search") ||
+                    intent.includes("find") ||
+                    intent.includes("browse")) {
+                    phase = "searching";
+                }
+                else if (intent.includes("read") ||
+                    intent.includes("extract") ||
+                    intent.includes("scrape") ||
+                    intent.includes("parse")) {
+                    phase = "reading";
+                }
+                else if (intent.includes("plan")) {
+                    phase = "planning";
+                }
+            }
+            // Count completed searches and page reads
+            const searchesDone = planSteps.filter((s) => s.status === "done" &&
+                /search|find|browse/i.test(s.intent)).length;
+            const pagesRead = planSteps.filter((s) => s.status === "done" &&
+                /read|extract|scrape|parse/i.test(s.intent)).length;
+            return {
+                ...state,
+                planSteps,
+                currentStepIndex,
+                phase,
+                searchesDone,
+                pagesRead,
+            };
+        }
+        // ── sources.found ────────────────────────────────────────────
+        // New sources discovered by the agent. Deduplicated by URL.
+        case "sources.found": {
+            const p = event.payload;
+            const existingUrls = new Set(state.sources.map((s) => s.url));
+            const newSources = p.sources.filter((s) => !existingUrls.has(s.url));
+            if (newSources.length === 0)
+                return state;
+            return {
+                ...state,
+                sources: [...state.sources, ...newSources],
+            };
+        }
+        // ── frontend.call ────────────────────────────────────────────
+        // Agent-triggered frontend actions. We only care about
+        // show_plan_step, which delivers the full plan object.
+        case "frontend.call": {
+            const p = event.payload;
+            if (p.name === "show_plan_step" && p.input) {
+                const plan = p.input;
+                return {
+                    ...state,
+                    plan,
+                    currentStepIndex: plan.currentStep ?? state.currentStepIndex,
+                };
+            }
+            // render_sources and show_related are informational —
+            // sources are already tracked via sources.found events.
+            return state;
+        }
+        // ── answer.chunk ─────────────────────────────────────────────
+        // Streaming token from the agent's final answer.
+        // Transitions phase to "writing".
+        case "answer.chunk": {
+            const p = event.payload;
+            return {
+                ...state,
+                phase: "writing",
+                isStreaming: true,
+                currentAnswer: state.currentAnswer + (p.delta ?? ""),
+            };
+        }
+        // ── think.chunk ──────────────────────────────────────────────
+        // Streaming token from the agent's internal monologue/thinking.
+        // Also accumulated into currentAnswer for a unified view.
+        case "think.chunk": {
+            const p = event.payload;
+            return {
+                ...state,
+                isStreaming: true,
+                currentAnswer: state.currentAnswer + (p.delta ?? ""),
+            };
+        }
+        // ── done ──────────────────────────────────────────────────────
+        // The agent has finished its task.
+        case "done": {
+            return {
+                ...state,
+                phase: "done",
+                doneReceived: true,
+                isStreaming: false,
+            };
+        }
+        // ── paused ────────────────────────────────────────────────────
+        // The agent was paused (awaiting user input or tool result).
+        case "paused": {
+            return {
+                ...state,
+                phase: state.phase, // Preserve last known phase
+                isStreaming: false,
+            };
+        }
+        // ── error ─────────────────────────────────────────────────────
+        // An unrecoverable error occurred.
+        case "error": {
+            const p = event.payload;
+            return {
+                ...state,
+                phase: "error",
+                error: p.message ?? "An unknown error occurred",
+                isStreaming: false,
+            };
+        }
+        default:
+            return state;
+    }
+}
+/**
+ * Reduce an array of AnvilEvents into a single AgentState.
+ *
+ * @param events  Ordered array of events (oldest first).
+ * @returns       Final AgentState after processing all events.
+ */
+export function reduceAgentStateFromEvents(events) {
+    let state = INITIAL_AGENT_STATE;
+    for (const e of events) {
+        state = reduceAgentState(state, e);
+    }
+    return state;
+}
+/**
+ * Subscribe to an Anvil session's raw events and derive a high-level
+ * `AgentState` that tracks the agent's thinking process in real time.
+ *
+ * Two modes:
+ *
+ * **sharedEvents mode** (recommended for composability):
+ * ```tsx
+ * const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
+ * const session = useSession({
+ *   onEvent: (e) => setSharedEvents(prev => [...prev, e]),
+ * });
+ * const { messages } = useChat(session.sessionId, sharedEvents);
+ * const agentState = useAgentState({ sharedEvents });
+ * ```
+ *
+ * **sessionId mode** (convenience — subscribes internally):
+ * ```tsx
+ * const agentState = useAgentState({ sessionId });
+ * ```
+ *
+ * The `agentState` re-renders on every event, making it suitable for
+ * real-time UIs that show spinners, step indicators, progress bars,
+ * and streaming answer text.
+ */
+export function useAgentState(options) {
+    const hasExternalEvents = options?.sharedEvents !== undefined;
+    const sessionId = options?.sessionId ?? null;
+    // Only query the Anvil context when we actually need to subscribe.
+    // In sharedEvents mode the hook is a pure reducer and does not
+    // require <AnvilProvider>.
+    const { client } = useAnvil();
+    const [internalEvents, setInternalEvents] = useState([]);
+    const prevSessionRef = useRef(null);
+    // Subscribe to the session stream when sessionId changes
+    // (only used when no sharedEvents are provided).
+    useEffect(() => {
+        if (hasExternalEvents || !sessionId)
+            return;
+        // Reset event log when switching sessions
+        if (prevSessionRef.current !== sessionId) {
+            setInternalEvents([]);
+            prevSessionRef.current = sessionId;
+        }
+        const sub = client.subscribe(sessionId, (e) => {
+            setInternalEvents((prev) => [...prev, e]);
+        });
+        return () => {
+            sub.unsubscribe();
+        };
+    }, [sessionId, hasExternalEvents, client]);
+    // Pick the event source — external takes priority
+    const events = hasExternalEvents
+        ? (options?.sharedEvents ?? [])
+        : internalEvents;
+    // Derive AgentState via the pure reducer on every render.
+    // useMemo ensures referential stability only when the event
+    // list actually changes.
+    const state = useMemo(() => reduceAgentStateFromEvents(events), [events]);
+    return state;
+}
 const AnvilContext = createContext(null);
 export function AnvilProvider(props) {
     const { baseUrl, client: providedClient, config, children } = props;

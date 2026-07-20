@@ -9,12 +9,138 @@
  *   - useChat(): the high-level chat-style hook (events → messages)
  *   - useFrontendTool(): declare a tool the agent can call in the browser
  *   - useAnvilEvent(): subscribe to a specific event type
+ *   - useAgentState(): real-time agent thinking state machine
+ *   - reduceAgentState() / reduceAgentStateFromEvents(): pure reducers
  *
  * Designed to be UI-agnostic. Bring your own components.
  */
 import { type ReactNode } from "react";
 import { AnvilClient, type AnvilEvent, type EventType, type Subscription, type ClientConfig } from "@anvil/client";
 export type { AnvilEvent, EventType, Subscription, ClientConfig };
+/**
+ * High-level phase of the agent's thinking loop.
+ * Used by UIs to render appropriate indicators (spinners, progress bars, etc.).
+ */
+export type AgentPhase = "idle" | "planning" | "searching" | "reading" | "writing" | "done" | "error";
+/**
+ * A single step in the agent's plan timeline.
+ * Emitted as plan.step events from the server.
+ */
+export interface PlanStep {
+    id: string;
+    intent: string;
+    status: "running" | "done";
+    detail?: string;
+}
+/**
+ * A source discovered and used by the agent.
+ */
+export interface AgentSource {
+    id: number;
+    url: string;
+    title: string;
+    domain: string;
+}
+/**
+ * The plan object delivered via the show_plan_step frontend call.
+ */
+export interface AgentPlan {
+    steps: PlanStep[];
+    currentStep: number;
+    [key: string]: unknown;
+}
+/**
+ * Full reactive agent state exposed by useAgentState.
+ * Every field is derived from Anvil events — no imperative set calls.
+ */
+export interface AgentState {
+    /** Current high-level phase of the agent's thinking loop. */
+    phase: AgentPhase;
+    /** The original task/question that was submitted. */
+    task: string | null;
+    /** The active session ID. */
+    sessionId: string | null;
+    /** Timeline of plan.step events — every state transition, in order. */
+    planSteps: PlanStep[];
+    /** The last plan object received from the show_plan_step frontend call. */
+    plan: AgentPlan | null;
+    /** All sources discovered so far (deduplicated by URL). */
+    sources: AgentSource[];
+    /** Number of search steps completed (plan.step with search/find intent, status=done). */
+    searchesDone: number;
+    /** Number of page-reading steps completed (plan.step with read/extract intent, status=done). */
+    pagesRead: number;
+    /** Index into planSteps of the most recently received step. */
+    currentStepIndex: number;
+    /** Accumulated answer text from answer.chunk events. */
+    currentAnswer: string;
+    /** Whether the agent is actively streaming an answer. */
+    isStreaming: boolean;
+    /** Error message, if the agent encountered an unrecoverable error. */
+    error: string | null;
+    /** Whether the terminal 'done' event has been received. */
+    doneReceived: boolean;
+}
+/**
+ * Process a single Anvil event through the agent state reducer.
+ *
+ * This is a **pure function** — no React, no side-effects. You can import
+ * it to build the same state machine in Vue, Svelte, vanilla JS, or
+ * server-side renderers.
+ *
+ * @param state  The current AgentState (start with INITIAL_AGENT_STATE).
+ * @param event  A single AnvilEvent from the session stream.
+ * @returns      The next AgentState.
+ */
+export declare function reduceAgentState(state: AgentState, event: AnvilEvent<unknown>): AgentState;
+/**
+ * Reduce an array of AnvilEvents into a single AgentState.
+ *
+ * @param events  Ordered array of events (oldest first).
+ * @returns       Final AgentState after processing all events.
+ */
+export declare function reduceAgentStateFromEvents(events: AnvilEvent[]): AgentState;
+export interface UseAgentStateOptions {
+    /**
+     * Session ID to subscribe to. Ignored when `sharedEvents` is provided.
+     * Requires being inside <AnvilProvider>.
+     */
+    sessionId?: string | null;
+    /**
+     * Shared event array (single-source-of-truth pattern, same as
+     * AnvilPerplexity uses). When provided, the hook reads from this
+     * array instead of opening its own subscription. This is the
+     * recomended mode for composability — share one event stream
+     * across multiple hooks (useChat, useAgentState, etc.).
+     */
+    sharedEvents?: AnvilEvent[];
+}
+/**
+ * Subscribe to an Anvil session's raw events and derive a high-level
+ * `AgentState` that tracks the agent's thinking process in real time.
+ *
+ * Two modes:
+ *
+ * **sharedEvents mode** (recommended for composability):
+ * ```tsx
+ * const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
+ * const session = useSession({
+ *   onEvent: (e) => setSharedEvents(prev => [...prev, e]),
+ * });
+ * const { messages } = useChat(session.sessionId, sharedEvents);
+ * const agentState = useAgentState({ sharedEvents });
+ * ```
+ *
+ * **sessionId mode** (convenience — subscribes internally):
+ * ```tsx
+ * const agentState = useAgentState({ sessionId });
+ * ```
+ *
+ * The `agentState` re-renders on every event, making it suitable for
+ * real-time UIs that show spinners, step indicators, progress bars,
+ * and streaming answer text.
+ */
+export declare function useAgentState(options?: UseAgentStateOptions): AgentState;
 export interface FrontendToolExecutor<TInput = unknown, TOutput = unknown> {
     /** Tool name (must match what the engine sees). */
     name: string;

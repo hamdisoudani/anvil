@@ -22,6 +22,7 @@ import { Badge } from "./components/ui/badge";
 import { Textarea, Input } from "./components/ui/input";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
+import { AgentThinking, AgentThinkingInline } from "./components/agent-thinking";
 import { cn } from "./lib/utils";
 import {
   Search,
@@ -269,18 +270,23 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }: AnvilPerple
             ) : (
               <div className="mx-auto max-w-2xl lg:max-w-3xl px-3 sm:px-6 py-3 sm:py-8 space-y-4 sm:space-y-8">
                 {messages.map((m, i) => (
-                  <MessageBubble key={m.id} msg={m}
-                    isLast={i === messages.length - 1}
-                    isRunning={isRunning && i === messages.length - 1} />
-                ))}
-                {/* Show status when running with no assistant message yet */}
-                {isRunning && messages.filter(m => m.role === "assistant").length === 0 && (
-                  <div className="flex justify-start">
-                    <div className="text-xs text-muted-foreground animate-pulse flex items-center gap-2">
-                      <span className="inline-block w-2 h-2 rounded-full bg-foreground/30 animate-bounce" />
-                      Searching and analyzing...
-                    </div>
+                  <div key={m.id}>
+                    {i > 0 && messages[i-1]?.role === "user" && m.role === "assistant" && (
+                      <div className="mb-3 sm:mb-4">
+                        <AgentThinking events={sharedEvents} compact />
+                      </div>
+                    )}
+                    <MessageBubble
+                      key={m.id}
+                      msg={m}
+                      isLast={i === messages.length - 1}
+                      isRunning={isRunning && i === messages.length - 1}
+                    />
                   </div>
+                ))}
+                {/* Show thinking while running with no assistant message yet */}
+                {isRunning && messages.filter(m => m.role === "assistant").length === 0 && (
+                  <AgentThinking events={sharedEvents} />
                 )}
               </div>
             )}
@@ -538,3 +544,6 @@ function ToolCallBubble({ msg }: { msg: ChatMessage }) {
 
 // Re-export headless primitives
 export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, type AnvilEvent } from "@anvil/react-headless";
+export { useAgentState } from "@anvil/react-headless";
+// Re-export our new components
+export { AgentThinking, AgentThinkingInline } from "./components/agent-thinking";

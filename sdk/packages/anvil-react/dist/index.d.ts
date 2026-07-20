@@ -22,4 +22,6 @@ export interface AnvilPerplexityProps {
 }
 export declare function AnvilPerplexity({ className, defaultFocus }: AnvilPerplexityProps): import("react").JSX.Element;
 export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, type AnvilEvent } from "@anvil/react-headless";
+export { useAgentState } from "@anvil/react-headless";
+export { AgentThinking, AgentThinkingInline } from "./components/agent-thinking";
 //# sourceMappingURL=index.d.ts.map
