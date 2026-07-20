@@ -232,10 +232,7 @@ export function reduceAgentStateFromEvents(events) {
 export function useAgentState(options) {
     const hasExternalEvents = options?.sharedEvents !== undefined;
     const sessionId = options?.sessionId ?? null;
-    // Only query the Anvil context when we actually need to subscribe.
-    // In sharedEvents mode the hook is a pure reducer and does not
-    // require <AnvilProvider>.
-    const { client } = useAnvil();
+    const { client } = useAnvil(); // Requires <AnvilProvider> (same as all other hooks)
     const [internalEvents, setInternalEvents] = useState([]);
     const prevSessionRef = useRef(null);
     // Subscribe to the session stream when sessionId changes
