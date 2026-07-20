@@ -267,6 +267,8 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
   const cancel = useCallback(() => {
     subRef.current?.unsubscribe();
     subRef.current = null;
+    sessionRef.current = null;
+    setSessionId(null);
     setStatus("idle");
   }, []);
 

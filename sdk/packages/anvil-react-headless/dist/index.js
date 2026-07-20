@@ -1,0 +1,389 @@
+import { jsx as _jsx } from "react/jsx-runtime";
+/**
+ * @anvil/react-headless — React hooks for Anvil.
+ *
+ * Provides:
+ *   - AnvilProvider: configures the client + holds frontend tool registry
+ *   - useAnvil(): access the client and tool registry
+ *   - useSession(): start/manage a session, returns live events
+ *   - useEvents(): subscribe to a session, returns event list + last id
+ *   - useChat(): the high-level chat-style hook (events → messages)
+ *   - useFrontendTool(): declare a tool the agent can call in the browser
+ *   - useAnvilEvent(): subscribe to a specific event type
+ *
+ * Designed to be UI-agnostic. Bring your own components.
+ */
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, } from "react";
+import { AnvilClient, } from "@anvil/client";
+const AnvilContext = createContext(null);
+export function AnvilProvider(props) {
+    const { baseUrl, client: providedClient, config, children } = props;
+    const client = useMemo(() => {
+        if (providedClient)
+            return providedClient;
+        return new AnvilClient({ baseUrl, ...config });
+    }, [providedClient, baseUrl, config]);
+    const toolsRef = useRef(new Map());
+    const registerTool = useCallback((tool) => {
+        toolsRef.current.set(tool.name, tool);
+        return () => {
+            toolsRef.current.delete(tool.name);
+        };
+    }, []);
+    const getTool = useCallback((name) => {
+        return toolsRef.current.get(name);
+    }, []);
+    // Wire up tool result delivery: when a tool.call event arrives with
+    // is_frontend=true, find the matching tool, execute it, deliver result.
+    // The delivery is per-session, so we need to listen at the client level
+    // — but actually that's the session subscriber's job (useSession
+    // does it). Keep this provider just for tool registry.
+    //
+    // We do need a global listener for tool calls that need to be
+    // answered even when the UI doesn't care. Use a background subscription.
+    useEffect(() => {
+        // No global handler needed — each useSession subscribes and
+        // dispatches tool calls to its session's tool registry.
+    }, []);
+    const value = { client, registerTool, getTool };
+    return _jsx(AnvilContext.Provider, { value: value, children: children });
+}
+export function useAnvil() {
+    const v = useContext(AnvilContext);
+    if (!v)
+        throw new Error("useAnvil must be used inside <AnvilProvider>");
+    return v;
+}
+export function useSession(opts = {}) {
+    const { client, getTool } = useAnvil();
+    const [sessionId, setSessionId] = useState(opts.sessionId ?? null);
+    const [status, setStatus] = useState("idle");
+    const [error, setError] = useState(null);
+    const [eventCount, setEventCount] = useState(0);
+    const [lastEventId, setLastEventId] = useState(0);
+    const subRef = useRef(null);
+    const sessionRef = useRef(null); // track current session for dedup
+    const onEventRef = useRef(opts.onEvent);
+    const onToolCallRef = useRef(opts.onToolCall);
+    onEventRef.current = opts.onEvent;
+    onToolCallRef.current = opts.onToolCall;
+    const subscribe = useCallback((id) => {
+        // Guard: don't re-subscribe if already subscribed to THIS session
+        if (sessionRef.current === id && subRef.current) {
+            return;
+        }
+        sessionRef.current = id;
+        subRef.current?.unsubscribe();
+        setStatus("running");
+        setEventCount(0);
+        setLastEventId(0);
+        subRef.current = client.subscribe(id, async (e) => {
+            setEventCount((c) => c + 1);
+            setLastEventId(e.id);
+            onEventRef.current?.(e);
+            // Handle tool calls — either via onToolCall or the registry
+            if (e.type === "tool.call") {
+                const p = e.payload;
+                if (p.is_frontend) {
+                    // Map server's "id" to our "callId"
+                    const call = { callId: p.id, name: p.name, input: p.input };
+                    // Find executor
+                    const tool = getTool(p.name);
+                    const exec = onToolCallRef.current
+                        ? () => onToolCallRef.current(call)
+                        : tool
+                            ? () => tool.execute(p.input)
+                            : null;
+                    if (exec) {
+                        try {
+                            const result = await Promise.resolve(exec());
+                            await client.deliverToolResult(id, p.id, result);
+                        }
+                        catch (err) {
+                            await client.deliverToolResult(id, p.id, null, err instanceof Error ? err.message : String(err));
+                        }
+                    }
+                    else {
+                        // No handler — report as error so the agent doesn't hang
+                        await client.deliverToolResult(id, p.id, null, `no handler registered for frontend tool "${p.name}"`);
+                    }
+                }
+            }
+            if (e.type === "done")
+                setStatus("done");
+            if (e.type === "paused")
+                setStatus("paused");
+        });
+    }, [client, getTool]);
+    // Subscribe when sessionId changes (either from start/resume or opts on mount)
+    useEffect(() => {
+        if (sessionId) {
+            subscribe(sessionId);
+            return () => {
+                subRef.current?.unsubscribe();
+                subRef.current = null;
+            };
+        }
+        return undefined;
+    }, [sessionId, subscribe]);
+    // NOTE: This is the ONLY place subscribe() is called.
+    // start() and resume() set sessionId; the effect subscribes.
+    // This eliminates the double-subscription bug (BUG-H1).
+    const start = useCallback(async (task) => {
+        setStatus("starting");
+        setError(null);
+        try {
+            const { sessionId: newId } = await client.startTask(task);
+            // Subscribe immediately AND set sessionId.
+            // The sessionRef guard in subscribe() prevents the effect from
+            // double-subscribing when sessionId changes.
+            setSessionId(newId);
+            subscribe(newId);
+            return newId;
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error(String(err)));
+            setStatus("error");
+            throw err;
+        }
+    }, [client, subscribe]);
+    const resume = useCallback(async (id) => {
+        setStatus("starting");
+        setError(null);
+        try {
+            const { sessionId: newId } = await client.resume(id);
+            setSessionId(newId);
+            subscribe(newId);
+            return newId;
+        }
+        catch (err) {
+            setError(err instanceof Error ? err : new Error(String(err)));
+            setStatus("error");
+            throw err;
+        }
+    }, [client, subscribe]);
+    const cancel = useCallback(() => {
+        subRef.current?.unsubscribe();
+        subRef.current = null;
+        sessionRef.current = null;
+        setSessionId(null);
+        setStatus("idle");
+    }, []);
+    return { sessionId, status, error, start, resume, cancel, eventCount, lastEventId };
+}
+// ── useEvents: typed event log for a session ─────────────────────
+export function useEvents(sessionId, onEvent) {
+    const { client } = useAnvil();
+    const [events, setEvents] = useState([]);
+    const subRef = useRef(null);
+    const onEventRef = useRef(onEvent);
+    onEventRef.current = onEvent;
+    useEffect(() => {
+        if (!sessionId) {
+            setEvents([]);
+            return undefined;
+        }
+        subRef.current = client.subscribe(sessionId, (e) => {
+            setEvents((prev) => [...prev, e]);
+            onEventRef.current?.(e);
+        });
+        return () => subRef.current?.unsubscribe();
+    }, [sessionId, client]);
+    const clear = useCallback(() => setEvents([]), []);
+    return { events, clear, lastId: events.at(-1)?.id ?? 0 };
+}
+// ── useAnvilEvent: subscribe to a specific event type ─────────────
+export function useAnvilEvent(sessionId, type, handler) {
+    const { client } = useAnvil();
+    const handlerRef = useRef(handler);
+    handlerRef.current = handler;
+    useEffect(() => {
+        if (!sessionId)
+            return undefined;
+        const sub = client.subscribe(sessionId, (e) => {
+            if (e.type === type)
+                handlerRef.current(e);
+        });
+        return () => sub.unsubscribe();
+    }, [sessionId, type, client]);
+}
+// ── useFrontendTool: declare a browser-side tool ─────────────────
+export function useFrontendTool(tool) {
+    const { registerTool } = useAnvil();
+    useEffect(() => {
+        return registerTool(tool);
+    }, [registerTool, tool]);
+}
+export function useChat(sessionId, events) {
+    const { events: ownEvents } = useEvents(sessionId);
+    const allEvents = events ?? ownEvents;
+    const messages = useMemo(() => {
+        const out = [];
+        let currentAssistant = null;
+        let subAgents = new Map();
+        let pendingSources = null;
+        for (const e of allEvents) {
+            switch (e.type) {
+                case "session.start": {
+                    // The user message is the task itself; emit it once.
+                    const task = e.payload?.task;
+                    if (task) {
+                        out.push({
+                            id: `user-${e.id}`,
+                            role: "user",
+                            content: task,
+                            timestamp: Date.parse(e.createdAt),
+                        });
+                    }
+                    break;
+                }
+                case "answer.chunk":
+                case "think.chunk": {
+                    const delta = e.payload.delta;
+                    if (!currentAssistant) {
+                        currentAssistant = {
+                            id: `assistant-${e.id}`,
+                            role: "assistant",
+                            content: "",
+                            timestamp: Date.parse(e.createdAt),
+                            isStreaming: true,
+                            // Migrate pending sources if any
+                            sources: pendingSources ?? undefined,
+                        };
+                        out.push(currentAssistant);
+                        pendingSources = null;
+                    }
+                    currentAssistant.content += delta;
+                    // Trigger re-render — push a new object each chunk
+                    const idx = out.indexOf(currentAssistant);
+                    if (idx >= 0) {
+                        out[idx] = { ...currentAssistant };
+                    }
+                    break;
+                }
+                case "think.end": {
+                    if (currentAssistant) {
+                        currentAssistant.isStreaming = false;
+                        const idx = out.indexOf(currentAssistant);
+                        if (idx >= 0) {
+                            out[idx] = { ...currentAssistant };
+                        }
+                        currentAssistant = null;
+                    }
+                    break;
+                }
+                case "tool.call": {
+                    const p = e.payload;
+                    out.push({
+                        id: `tool-call-${e.id}`,
+                        role: "tool",
+                        content: p.name,
+                        toolName: p.name,
+                        toolInput: p.input,
+                        timestamp: Date.parse(e.createdAt),
+                    });
+                    break;
+                }
+                case "tool.result": {
+                    const p = e.payload;
+                    // Attach to last tool call
+                    for (let i = out.length - 1; i >= 0; i--) {
+                        const m = out[i];
+                        if (m && m.role === "tool" && m.toolName && !m.toolResult && !m.toolError) {
+                            out[i] = { ...m, toolResult: p.result, toolError: p.err };
+                            break;
+                        }
+                    }
+                    break;
+                }
+                case "subagent": {
+                    const p = e.payload;
+                    if (p.action === "start") {
+                        const msg = {
+                            id: `sub-${p.sub_id}`,
+                            role: "assistant",
+                            content: `[${p.role}] ${p.task}`,
+                            timestamp: Date.parse(e.createdAt),
+                            subAgentId: p.sub_id,
+                            subAgentRole: p.role,
+                        };
+                        out.push(msg);
+                        subAgents.set(p.sub_id, msg);
+                    }
+                    break;
+                }
+                case "sources.found": {
+                    const p = e.payload;
+                    const sources = p.sources;
+                    if (currentAssistant) {
+                        // Attach to the current assistant message
+                        const idx = out.indexOf(currentAssistant);
+                        if (idx >= 0) {
+                            currentAssistant = { ...currentAssistant, sources };
+                            out[idx] = currentAssistant;
+                        }
+                    }
+                    else {
+                        // No assistant message yet — stash for later
+                        pendingSources = sources;
+                        // Also attach to the last user message as a fallback
+                        for (let i = out.length - 1; i >= 0; i--) {
+                            const m = out[i];
+                            if (m && m.role === "user") {
+                                out[i] = { ...m, sources };
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+                case "frontend.call": {
+                    // Attach the call's data to the current assistant message
+                    const p = e.payload;
+                    if (p.name === "show_related" && p.input && p.input.questions) {
+                        if (currentAssistant) {
+                            const idx = out.indexOf(currentAssistant);
+                            if (idx >= 0) {
+                                const updated = { ...out[idx], related: p.input.questions };
+                                out[idx] = updated;
+                                currentAssistant = updated;
+                            }
+                        }
+                    }
+                    break;
+                }
+                case "done": {
+                    const p = e.payload;
+                    // Mark the last assistant message as done
+                    for (let i = out.length - 1; i >= 0; i--) {
+                        const m = out[i];
+                        if (m && m.role === "assistant") {
+                            out[i] = {
+                                ...m,
+                                isStreaming: false,
+                                sources: m.sources ?? p.sources ?? undefined,
+                                related: m.related ?? p.related ?? undefined,
+                            };
+                            break;
+                        }
+                    }
+                    if (currentAssistant) {
+                        currentAssistant.isStreaming = false;
+                        currentAssistant.sources = currentAssistant.sources ?? p.sources ?? undefined;
+                        currentAssistant.related = currentAssistant.related ?? p.related ?? undefined;
+                        const idx = out.indexOf(currentAssistant);
+                        if (idx >= 0) {
+                            out[idx] = { ...currentAssistant };
+                        }
+                        currentAssistant = null;
+                    }
+                    pendingSources = null;
+                    break;
+                }
+            }
+        }
+        return out;
+    }, [allEvents]);
+    return { messages };
+}
+//# sourceMappingURL=index.js.map
