@@ -20,8 +20,13 @@ export interface AnvilPerplexityProps {
     className?: string;
     defaultFocus?: FocusMode;
 }
-export declare function AnvilPerplexity({ className, defaultFocus }: AnvilPerplexityProps): import("react").JSX.Element;
-export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, type AnvilEvent } from "@anvil/react-headless";
-export { useAgentState } from "@anvil/react-headless";
-export { AgentThinking, AgentThinkingInline } from "./components/agent-thinking";
+export declare function AnvilPerplexity({ className, defaultFocus, }: AnvilPerplexityProps): import("react").JSX.Element;
+export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgentState, type AnvilEvent, type ChatMessage, } from "@anvil/react-headless";
+export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
+export { Conversation, ConversationContent, ConversationEmptyState } from "./components/ai-elements/conversation";
+export { Response } from "./components/ai-elements/response";
+export { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai-elements/sources";
+export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-elements/reasoning";
+export { Loader } from "./components/ai-elements/loader";
+export { Actions, Action } from "./components/ai-elements/actions";
 //# sourceMappingURL=index.d.ts.map

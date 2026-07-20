@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
-import { AnvilProvider, AnvilPerplexity, useFrontendTool } from "@anvil/react";
+import { AnvilProvider, AnvilPerplexity } from "@anvil/react";
+import { useFrontendTool } from "@anvil/react-headless";
 import "./index.css";
 
 // Tools must be registered INSIDE <AnvilProvider>.

@@ -1,0 +1,1 @@
+{"version":3,"file":"response.d.ts","sourceRoot":"","sources":["../../../src/components/ai-elements/response.tsx"],"names":[],"mappings":"AAEA;;;;;;;GAOG;AACH,OAAO,KAAK,KAAK,MAAM,OAAO,CAAC;AAG/B,UAAU,aAAc,SAAQ,KAAK,CAAC,cAAc,CAAC,cAAc,CAAC;IAClE,QAAQ,EAAE,MAAM,CAAC;CAClB;AA8ED,wBAAgB,QAAQ,CAAC,EAAE,QAAQ,EAAE,SAAS,EAAE,GAAG,KAAK,EAAE,EAAE,aAAa,qBASxE"}
