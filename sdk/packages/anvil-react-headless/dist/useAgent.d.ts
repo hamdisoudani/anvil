@@ -9,6 +9,23 @@ export interface ToolDefinition<I = any, O = any> {
 }
 /** Tool renderer: renders a tool result as a React node */
 export type ToolRenderer = (data: any) => React.ReactNode;
+/** An active interrupt from the agent, waiting for user input. */
+export interface PendingInterrupt {
+    /** The call ID (used to send the result back). */
+    callId: string;
+    /** The tool name (e.g. "approve_deploy", "render_chart"). */
+    toolName: string;
+    /** The input payload from the agent. */
+    input: any;
+    /** Whether this is a frontend-originating interrupt. */
+    isFrontend: boolean;
+    /** Resolve this interrupt with a result. */
+    resolve: (result: any) => void;
+    /** Reject this interrupt (agent gets an error). */
+    reject: (error: string) => void;
+    /** The agent is waiting for this — component should display UI. */
+    timestamp: number;
+}
 /** Options for useAgent */
 export interface UseAgentOptions {
     /** URL or baseUrl of the Anvil agent server */
@@ -25,6 +42,8 @@ export interface UseAgentOptions {
     onEvent?: (event: AnvilEvent) => void;
     /** Called when streaming starts/stops */
     onStreamToggle?: (streaming: boolean) => void;
+    /** Called when the agent requests an interrupt (approval/form/etc.) */
+    onInterrupt?: (interrupt: PendingInterrupt) => void;
 }
 /** The full agent API returned by useAgent */
 export interface UseAgentReturn {
@@ -41,6 +60,12 @@ export interface UseAgentReturn {
     cancel: () => void;
     /** Reset everything / start a new thread */
     reset: () => void;
+    /** The current interrupt waiting for user input, if any. */
+    pendingInterrupt: PendingInterrupt | null;
+    /** Approve the current interrupt with a result. Auto-sends to agent. */
+    approveInterrupt: (result: any) => void;
+    /** Reject the current interrupt. Agent gets an error. */
+    rejectInterrupt: (reason?: string) => void;
     events: AnvilEvent[];
     session: UseSessionResult;
 }

@@ -232,5 +232,5 @@ export declare function useChat(sessionId: string | null, events?: AnvilEvent[])
     messages: ChatMessage[];
 };
 export { useAgent } from "./useAgent";
-export type { ToolHandler, ToolDefinition, ToolRenderer, UseAgentOptions, UseAgentReturn } from "./useAgent";
+export type { ToolHandler, ToolDefinition, ToolRenderer, UseAgentOptions, UseAgentReturn, PendingInterrupt } from "./useAgent";
 //# sourceMappingURL=index.d.ts.map

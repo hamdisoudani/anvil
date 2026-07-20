@@ -18,6 +18,7 @@
  * Fully customizable via slots/children (coming soon).
  */
 import * as React from "react";
+import { useState as useStateFn } from "react";
 import { cn } from "../lib/utils";
 import {
   Message,
@@ -58,7 +59,7 @@ import {
   User,
   Globe,
 } from "lucide-react";
-import type { UseAgentReturn, AgentState } from "@anvil/react-headless";
+import type { UseAgentReturn, AgentState, PendingInterrupt } from "@anvil/react-headless";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -73,6 +74,89 @@ function getActivityText(state: AgentState): string {
   if (state.phase === "idle") return "";
   return state.phase;
 }
+
+// ── Interrupt Dialog Component ──────────────────────────────────
+
+function InterruptDialog({ interrupt, onApprove, onReject }: {
+  interrupt: PendingInterrupt;
+  onApprove: (result: any) => void;
+  onReject: () => void;
+}) {
+  const input = interrupt.input || {};
+
+  // Different UI based on the tool name
+  if (input.reason === "approval" || interrupt.toolName.includes("approve")) {
+    return (
+      <Card className="mx-auto max-w-md rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-4 my-4">
+        <p className="text-sm font-medium mb-1">{input.title || "Approval required"}</p>
+        <p className="text-xs sm:text-sm text-muted-foreground mb-3">{input.message || interrupt.toolName}</p>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
+          <Button size="sm" onClick={() => onApprove({ approved: true })}>Continue</Button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (input.reason === "choice" || input.options) {
+    const [selected, setSelected] = React.useState(0);
+    return (
+      <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
+        <p className="text-sm font-medium mb-2">{input.title || "Select an option"}</p>
+        <div className="flex flex-wrap gap-2 mb-3">
+          {(input.options || []).map((opt: string, i: number) => (
+            <Button key={i} variant={selected === i ? "default" : "outline"} size="sm" onClick={() => setSelected(i)}>
+              {opt}
+            </Button>
+          ))}
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
+          <Button size="sm" onClick={() => onApprove({ selected })}>Select</Button>
+        </div>
+      </Card>
+    );
+  }
+
+  // Input/form
+  if (input.reason === "input" || input.schema) {
+    const [formData, setFormData] = React.useState<Record<string, string>>({});
+    return (
+      <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
+        <p className="text-sm font-medium mb-2">{input.title || "Input required"}</p>
+        {input.schema?.properties && Object.keys(input.schema.properties).map((key) => (
+          <div key={key} className="mb-2">
+            <label className="text-[11px] text-muted-foreground">{key}</label>
+            <Textarea
+              className="min-h-[32px] text-xs"
+              placeholder={input.schema.properties[key]?.description || key}
+              onChange={(e) => setFormData(prev => ({ ...prev, [key]: e.target.value }))}
+            />
+          </div>
+        ))}
+        <div className="flex gap-2 justify-end mt-2">
+          <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
+          <Button size="sm" onClick={() => onApprove(formData)}>Submit</Button>
+        </div>
+      </Card>
+    );
+  }
+
+  // Generic fallback
+  return (
+    <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
+      <p className="text-sm font-medium mb-1">Agent needs input</p>
+      <p className="text-xs text-muted-foreground mb-3">Tool: {interrupt.toolName}</p>
+      <pre className="text-[10px] bg-muted/50 rounded p-2 mb-3 overflow-x-auto max-h-32">{JSON.stringify(input, null, 2)}</pre>
+      <div className="flex gap-2 justify-end">
+        <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
+        <Button size="sm" onClick={() => onApprove({})}>Continue</Button>
+      </div>
+    </Card>
+  );
+}
+
+// ── Main Component ──────────────────────────────────────────────
 
 interface AgentUIProps {
   agent: UseAgentReturn;
@@ -214,6 +298,16 @@ export function AgentUI({ agent, className, placeholder = "Ask anything…", ren
               )}
             </React.Fragment>
           ))}
+
+          {/* Thinking state when no assistant message yet */}
+          {/* Interrupt / HITL dialog */}
+          {agent.pendingInterrupt && (
+            <InterruptDialog
+              interrupt={agent.pendingInterrupt}
+              onApprove={agent.approveInterrupt}
+              onReject={() => agent.rejectInterrupt()}
+            />
+          )}
 
           {/* Thinking state when no assistant message yet */}
           {agent.isProcessing && agent.messages.filter(m => m.role === "assistant").length === 0 && (

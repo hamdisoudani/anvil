@@ -763,7 +763,7 @@ export { Actions, Action } from "./components/ai-elements/actions";
 
 // Unified Agent hook
 export { useAgent } from "@anvil/react-headless";
-export type { ToolHandler, UseAgentOptions, UseAgentReturn } from "@anvil/react-headless";
+export type { ToolHandler, UseAgentOptions, UseAgentReturn, PendingInterrupt } from "@anvil/react-headless";
 
 
 // Zero-config Agent UI
