@@ -57,7 +57,10 @@ func (b *StreamingBus) ThreadSessions(threadID string) []string {
 }
 
 func (b *StreamingBus) Subscribe(sessionID string) chan Event {
-	ch := make(chan Event, 256)
+	// Buffer must be larger than ReplayBufferSize to avoid deadlock
+	// when replaying synchronously (we fill the buffer before the
+	// consumer starts reading).
+	ch := make(chan Event, ReplayBufferSize*2)
 	b.mu.Lock()
 	if _, ok := b.subscribers[sessionID]; !ok {
 		b.subscribers[sessionID] = make(map[chan Event]struct{})

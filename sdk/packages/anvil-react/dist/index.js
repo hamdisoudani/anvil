@@ -53,10 +53,10 @@ function getThreadIdFromUrl() {
     return m ? decodeURIComponent(m[1]) : null;
 }
 function navigateToThread(id) {
-    window.history.replaceState(null, "", `/#/thread/${encodeURIComponent(id)}`);
+    window.history.pushState(null, "", `/#/thread/${encodeURIComponent(id)}`);
 }
 function navigateToHome() {
-    window.history.replaceState(null, "", "/");
+    window.history.pushState(null, "", "/");
 }
 export function AnvilPerplexity({ className, defaultFocus = "web" }) {
     // SHARED EVENT STREAM — single source of truth

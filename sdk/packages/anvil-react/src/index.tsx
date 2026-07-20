@@ -87,11 +87,11 @@ function getThreadIdFromUrl(): string | null {
 }
 
 function navigateToThread(id: string) {
-  window.history.replaceState(null, "", `/#/thread/${encodeURIComponent(id)}`);
+  window.history.pushState(null, "", `/#/thread/${encodeURIComponent(id)}`);
 }
 
 function navigateToHome() {
-  window.history.replaceState(null, "", "/");
+  window.history.pushState(null, "", "/");
 }
 
 // ── Main component ───────────────────────────────────────────────
