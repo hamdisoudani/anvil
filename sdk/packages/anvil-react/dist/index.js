@@ -247,4 +247,8 @@ export { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai
 export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-elements/reasoning";
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
+// Unified Agent hook
+export { useAgent } from "@anvil/react-headless";
+// Zero-config Agent UI
+export { AgentUI } from "./components/agent-ui";
 //# sourceMappingURL=index.js.map

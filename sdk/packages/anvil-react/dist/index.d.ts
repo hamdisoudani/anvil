@@ -29,4 +29,7 @@ export { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai
 export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-elements/reasoning";
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
+export { useAgent } from "@anvil/react-headless";
+export type { ToolHandler, UseAgentOptions, UseAgentReturn } from "@anvil/react-headless";
+export { AgentUI } from "./components/agent-ui";
 //# sourceMappingURL=index.d.ts.map

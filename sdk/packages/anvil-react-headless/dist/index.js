@@ -651,4 +651,6 @@ export function useChat(sessionId, events) {
     }, [allEvents]);
     return { messages };
 }
+// ── Unified Agent Hook ──────────────────────────────────────────
+export { useAgent } from "./useAgent";
 //# sourceMappingURL=index.js.map

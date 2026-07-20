@@ -941,3 +941,7 @@ export function useChat(sessionId: string | null, events?: AnvilEvent[]) {
 
   return { messages };
 }
+
+// ── Unified Agent Hook ──────────────────────────────────────────
+export { useAgent } from "./useAgent";
+export type { ToolHandler, ToolDefinition, ToolRenderer, UseAgentOptions, UseAgentReturn } from "./useAgent";
