@@ -78,6 +78,14 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }) {
     const inputRef = useRef(null);
     const [showHistory, setShowHistory] = useState(false);
     const [threads, setThreads] = useState(loadThreads);
+    // Sync threadId when URL hash changes (e.g. back/forward, new tab)
+    useEffect(() => {
+        const urlThread = getThreadIdFromUrl();
+        if (urlThread && urlThread !== threadId) {
+            setSharedEvents([]);
+            setThreadId(urlThread);
+        }
+    }, [typeof window !== "undefined" ? window.location.hash : null]);
     // Back/forward navigation
     useEffect(() => {
         const onPop = () => {

@@ -314,6 +314,20 @@ export function useSession(opts = {}) {
     const onToolCallRef = useRef(opts.onToolCall);
     onEventRef.current = opts.onEvent;
     onToolCallRef.current = opts.onToolCall;
+    // Sync sessionId when opts.sessionId changes (e.g. URL hash change)
+    useEffect(() => {
+        if (opts.sessionId && opts.sessionId !== sessionId) {
+            // Unsubscribe old session
+            subRef.current?.unsubscribe();
+            subRef.current = null;
+            sessionRef.current = null;
+            setSessionId(opts.sessionId);
+            setStatus("starting");
+            setEventCount(0);
+            setLastEventId(0);
+            onEventRef.current = opts.onEvent;
+        }
+    }, [opts.sessionId]);
     const subscribe = useCallback((id) => {
         // Guard: don't re-subscribe if already subscribed to THIS session
         if (sessionRef.current === id && subRef.current) {
