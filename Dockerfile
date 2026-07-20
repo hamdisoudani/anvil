@@ -1,17 +1,20 @@
 # Anvil Perplexity — production Dockerfile
 # Build: docker build -t perplexity .
-# Run:   docker run -p 8081:8081 -e GROQ_API_KEY=*** perplexity
 
 # ── Frontend build stage ────────────────────────────────────────
 FROM node:22-alpine AS frontend
 WORKDIR /sdk
 RUN corepack enable && corepack prepare pnpm@9 --activate
-COPY sdk/package.json sdk/pnpm-lock.yaml* ./
+
+# Copy workspace config + lockfile first (for caching)
+COPY sdk/package.json sdk/pnpm-lock.yaml sdk/pnpm-workspace.yaml ./
 COPY sdk/examples/chat-app/package.json ./examples/chat-app/
 COPY sdk/packages/anvil-client/package.json ./packages/anvil-client/
 COPY sdk/packages/anvil-react/package.json ./packages/anvil-react/
 COPY sdk/packages/anvil-react-headless/package.json ./packages/anvil-react-headless/
 RUN pnpm install --no-frozen-lockfile
+
+# Now copy the full SDK source and build
 COPY sdk/ ./
 RUN pnpm --filter @anvil/client build && \
     pnpm --filter @anvil/react-headless build && \
