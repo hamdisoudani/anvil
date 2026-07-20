@@ -47,21 +47,26 @@ function getActivityText(state) {
 }
 // ── Interrupt Dialog Component ──────────────────────────────────
 function InterruptDialog({ interrupt, onApprove, onReject }) {
+    // ALL hooks at top level — NEVER conditional (Rules of Hooks)
+    const [selected, setSelected] = React.useState(0);
+    const [formData, setFormData] = React.useState({});
     const input = interrupt.input || {};
-    // Different UI based on the tool name
-    if (input.reason === "approval" || interrupt.toolName.includes("approve")) {
+    const isApproval = input.reason === "approval" || interrupt.toolName.includes("approve");
+    const isChoice = input.reason === "choice" || !!input.options;
+    const isInput = input.reason === "input" || !!input.schema;
+    // ── Approval ──
+    if (isApproval) {
         return (_jsxs(Card, { className: "mx-auto max-w-md rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-4 my-4", children: [_jsx("p", { className: "text-sm font-medium mb-1", children: input.title || "Approval required" }), _jsx("p", { className: "text-xs sm:text-sm text-muted-foreground mb-3", children: input.message || interrupt.toolName }), _jsxs("div", { className: "flex gap-2 justify-end", children: [_jsx(Button, { variant: "outline", size: "sm", onClick: onReject, children: "Cancel" }), _jsx(Button, { size: "sm", onClick: () => onApprove({ approved: true }), children: "Continue" })] })] }));
     }
-    if (input.reason === "choice" || input.options) {
-        const [selected, setSelected] = React.useState(0);
+    // ── Choice ──
+    if (isChoice) {
         return (_jsxs(Card, { className: "mx-auto max-w-md rounded-xl border p-4 my-4", children: [_jsx("p", { className: "text-sm font-medium mb-2", children: input.title || "Select an option" }), _jsx("div", { className: "flex flex-wrap gap-2 mb-3", children: (input.options || []).map((opt, i) => (_jsx(Button, { variant: selected === i ? "default" : "outline", size: "sm", onClick: () => setSelected(i), children: opt }, i))) }), _jsxs("div", { className: "flex gap-2 justify-end", children: [_jsx(Button, { variant: "outline", size: "sm", onClick: onReject, children: "Cancel" }), _jsx(Button, { size: "sm", onClick: () => onApprove({ selected }), children: "Select" })] })] }));
     }
-    // Input/form
-    if (input.reason === "input" || input.schema) {
-        const [formData, setFormData] = React.useState({});
-        return (_jsxs(Card, { className: "mx-auto max-w-md rounded-xl border p-4 my-4", children: [_jsx("p", { className: "text-sm font-medium mb-2", children: input.title || "Input required" }), input.schema?.properties && Object.keys(input.schema.properties).map((key) => (_jsxs("div", { className: "mb-2", children: [_jsx("label", { className: "text-[11px] text-muted-foreground", children: key }), _jsx(Textarea, { className: "min-h-[32px] text-xs", placeholder: input.schema.properties[key]?.description || key, onChange: (e) => setFormData(prev => ({ ...prev, [key]: e.target.value })) })] }, key))), _jsxs("div", { className: "flex gap-2 justify-end mt-2", children: [_jsx(Button, { variant: "outline", size: "sm", onClick: onReject, children: "Cancel" }), _jsx(Button, { size: "sm", onClick: () => onApprove(formData), children: "Submit" })] })] }));
+    // ── Input/form ──
+    if (isInput) {
+        return (_jsxs(Card, { className: "mx-auto max-w-md rounded-xl border p-4 my-4", children: [_jsx("p", { className: "text-sm font-medium mb-2", children: input.title || "Input required" }), input.schema?.properties && Object.keys(input.schema.properties).map((key) => (_jsxs("div", { className: "mb-2", children: [_jsx("label", { className: "text-[11px] text-muted-foreground", children: key }), _jsx(Textarea, { className: "min-h-[32px] text-xs", placeholder: input.schema.properties[key]?.description || key, value: formData[key] ?? "", onChange: (e) => setFormData(prev => ({ ...prev, [key]: e.target.value })) })] }, key))), _jsxs("div", { className: "flex gap-2 justify-end mt-2", children: [_jsx(Button, { variant: "outline", size: "sm", onClick: onReject, children: "Cancel" }), _jsx(Button, { size: "sm", onClick: () => onApprove(formData), children: "Submit" })] })] }));
     }
-    // Generic fallback
+    // ── Generic fallback ──
     return (_jsxs(Card, { className: "mx-auto max-w-md rounded-xl border p-4 my-4", children: [_jsx("p", { className: "text-sm font-medium mb-1", children: "Agent needs input" }), _jsxs("p", { className: "text-xs text-muted-foreground mb-3", children: ["Tool: ", interrupt.toolName] }), _jsx("pre", { className: "text-[10px] bg-muted/50 rounded p-2 mb-3 overflow-x-auto max-h-32", children: JSON.stringify(input, null, 2) }), _jsxs("div", { className: "flex gap-2 justify-end", children: [_jsx(Button, { variant: "outline", size: "sm", onClick: onReject, children: "Cancel" }), _jsx(Button, { size: "sm", onClick: () => onApprove({}), children: "Continue" })] })] }));
 }
 export function AgentUI({ agent, className, placeholder = "Ask anything…", renderTool = {} }) {

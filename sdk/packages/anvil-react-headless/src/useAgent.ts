@@ -34,7 +34,7 @@
  * This is the SAME tool interface. No special interrupt config.
  * Anvil is the only framework where HITL is just a tool call.
  */
-import { useMemo, useCallback, useState, useRef, useEffect, startTransition } from "react";
+import { useMemo, useCallback, useState, useRef, useEffect, startTransition, type ReactNode } from "react";
 import {
   useSession,
   useChat,
@@ -58,7 +58,7 @@ export interface ToolDefinition<I = any, O = any> {
 }
 
 /** Tool renderer: renders a tool result as a React node */
-export type ToolRenderer = (data: any) => React.ReactNode;
+export type ToolRenderer = (data: any) => ReactNode;
 
 /** An active interrupt from the agent, waiting for user input. */
 export interface PendingInterrupt {
@@ -142,10 +142,8 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   const {
     sessionId: initialSessionId,
     tools: toolHandlers = {},
-    renderTool: _renderers,
     onStatusChange,
     onEvent: onEventCb,
-    onStreamToggle: _onStreamToggle,
     onInterrupt,
   } = options;
 
@@ -168,13 +166,6 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
     if (e.type === "error") onStatusChange?.("error");
     if (e.type === "done") onStatusChange?.("done");
 
-    // Detect frontend tool calls (interrupts) from the event stream
-    if (e.type === "tool.call" && (e as any).payload?.is_frontend) {
-      const call = (e as any).payload;
-      // Wait for the next tick to see if useSession already handled it
-      // (onToolCall callback in useSession runs first since it's registered
-      //  before our onEvent handler)
-    }
   }, [onEventCb, onStatusChange]);
 
   // Handle tool calls — both server tools and frontend tools (interrupts)
@@ -236,6 +227,14 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   const isDone = session.status === "done";
   const error = session.error?.message ?? agentState.error ?? null;
 
+  // Store session methods in refs so callbacks don't depend on session object identity
+  const startRef = useRef<(text: string) => Promise<string | void>>();
+  const cancelRef = useRef<() => void>();
+  useEffect(() => {
+    startRef.current = session.start;
+    cancelRef.current = session.cancel;
+  }, [session.start, session.cancel]);
+
   // Send: start a new run or continue
   const send = useCallback(async (text: string) => {
     if (!text.trim()) return;
@@ -243,26 +242,26 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
     setPendingInterrupt(null);
     pendingInterruptRef.current = null;
     try {
-      const sid = await session.start(text);
+      const sid = await startRef.current?.(text);
       return sid;
     } catch (err) {
       console.error("useAgent.send failed:", err);
       throw err;
     }
-  }, [session]);
+  }, []);
 
   // Cancel
   const cancel = useCallback(() => {
-    session.cancel();
-  }, [session]);
+    cancelRef.current?.();
+  }, []);
 
   // Reset: cancel + clear events
   const reset = useCallback(() => {
     setSharedEvents([]);
     setPendingInterrupt(null);
     pendingInterruptRef.current = null;
-    session.cancel();
-  }, [session]);
+    cancelRef.current?.();
+  }, []);
 
   // Approve/reject interrupt
   const approveInterrupt = useCallback((result: any) => {

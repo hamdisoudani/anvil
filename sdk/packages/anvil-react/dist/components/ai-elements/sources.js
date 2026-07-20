@@ -17,10 +17,13 @@ function useSources() {
 }
 export function Sources({ autoOpen = false, defaultOpen, className, children, ...props }) {
     const [open, setOpen] = React.useState(defaultOpen ?? autoOpen);
-    // Re-sync when autoOpen flips (e.g. on completion)
+    // Re-sync when autoOpen flips (track direction with a ref)
+    const prevAutoOpen = React.useRef(autoOpen);
     React.useEffect(() => {
-        if (autoOpen)
-            setOpen(true);
+        if (prevAutoOpen.current !== autoOpen) {
+            setOpen(autoOpen);
+            prevAutoOpen.current = autoOpen;
+        }
     }, [autoOpen]);
     return (_jsx(SourcesContext.Provider, { value: { autoOpen }, children: _jsx("div", { className: cn("mt-2", className), ...props, children: React.Children.map(children, (child) => {
                 if (React.isValidElement(child) && child.type === SourcesTrigger) {

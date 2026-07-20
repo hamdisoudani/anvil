@@ -33,13 +33,14 @@ export function Conversation({ className, children, ...props }) {
         setIsAtBottom(atBottom);
     }, []);
     // Auto-scroll on new content (only if user is already at bottom)
-    React.useEffect(() => {
+    // Use useLayoutEffect for DOM measurement, depend on children to detect new content
+    React.useLayoutEffect(() => {
         if (isAtBottom) {
             const el = scrollRef.current;
             if (el)
                 el.scrollTop = el.scrollHeight;
         }
-    });
+    }, [isAtBottom, children]);
     return (_jsx(ConversationContext.Provider, { value: { isAtBottom, scrollToBottom }, children: _jsxs("div", { className: cn("relative flex-1 min-h-0", className), ...props, children: [_jsx("div", { ref: scrollRef, onScroll: onScroll, className: "h-full overflow-y-auto", children: children }), _jsx(ConversationScrollButton, {})] }) }));
 }
 export function ConversationContent({ className, children, ...props }) {

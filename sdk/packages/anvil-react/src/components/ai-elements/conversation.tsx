@@ -45,12 +45,13 @@ export function Conversation({ className, children, ...props }: ConversationProp
   }, []);
 
   // Auto-scroll on new content (only if user is already at bottom)
-  React.useEffect(() => {
+  // Use useLayoutEffect for DOM measurement, depend on children to detect new content
+  React.useLayoutEffect(() => {
     if (isAtBottom) {
       const el = scrollRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     }
-  });
+  }, [isAtBottom, children]);
 
   return (
     <ConversationContext.Provider value={{ isAtBottom, scrollToBottom }}>

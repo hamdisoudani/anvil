@@ -46,7 +46,6 @@ import { Actions, Action } from "./ai-elements/actions";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Textarea } from "./ui/input";
-import { cn as classx } from "../lib/utils";
 import {
   ArrowUp,
   Sparkles,
@@ -82,10 +81,17 @@ function InterruptDialog({ interrupt, onApprove, onReject }: {
   onApprove: (result: any) => void;
   onReject: () => void;
 }) {
+  // ALL hooks at top level — NEVER conditional (Rules of Hooks)
+  const [selected, setSelected] = React.useState(0);
+  const [formData, setFormData] = React.useState<Record<string, string>>({});
   const input = interrupt.input || {};
 
-  // Different UI based on the tool name
-  if (input.reason === "approval" || interrupt.toolName.includes("approve")) {
+  const isApproval = input.reason === "approval" || interrupt.toolName.includes("approve");
+  const isChoice = input.reason === "choice" || !!input.options;
+  const isInput = input.reason === "input" || !!input.schema;
+
+  // ── Approval ──
+  if (isApproval) {
     return (
       <Card className="mx-auto max-w-md rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-4 my-4">
         <p className="text-sm font-medium mb-1">{input.title || "Approval required"}</p>
@@ -98,8 +104,8 @@ function InterruptDialog({ interrupt, onApprove, onReject }: {
     );
   }
 
-  if (input.reason === "choice" || input.options) {
-    const [selected, setSelected] = React.useState(0);
+  // ── Choice ──
+  if (isChoice) {
     return (
       <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
         <p className="text-sm font-medium mb-2">{input.title || "Select an option"}</p>
@@ -118,9 +124,8 @@ function InterruptDialog({ interrupt, onApprove, onReject }: {
     );
   }
 
-  // Input/form
-  if (input.reason === "input" || input.schema) {
-    const [formData, setFormData] = React.useState<Record<string, string>>({});
+  // ── Input/form ──
+  if (isInput) {
     return (
       <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
         <p className="text-sm font-medium mb-2">{input.title || "Input required"}</p>
@@ -130,6 +135,7 @@ function InterruptDialog({ interrupt, onApprove, onReject }: {
             <Textarea
               className="min-h-[32px] text-xs"
               placeholder={input.schema.properties[key]?.description || key}
+              value={formData[key] ?? ""}
               onChange={(e) => setFormData(prev => ({ ...prev, [key]: e.target.value }))}
             />
           </div>
@@ -142,7 +148,7 @@ function InterruptDialog({ interrupt, onApprove, onReject }: {
     );
   }
 
-  // Generic fallback
+  // ── Generic fallback ──
   return (
     <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
       <p className="text-sm font-medium mb-1">Agent needs input</p>
@@ -229,11 +235,11 @@ export function AgentUI({ agent, className, placeholder = "Ask anything…", ren
               )}
 
               {/* Tool message — rendered via renderTool if registered */}
-              {msg.role === "tool" && (msg as any).toolName && renderTool[(msg as any).toolName] && (
+              {msg.role === "tool" && msg.toolName && renderTool[msg.toolName] && (
                 <Message from="assistant">
                   <MessageAvatar name="AI" />
                   <MessageContent>
-                    {renderTool[(msg as any).toolName]!(msg)}
+                    {renderTool[msg.toolName]!(msg)}
                   </MessageContent>
                 </Message>
               )}
@@ -259,11 +265,11 @@ export function AgentUI({ agent, className, placeholder = "Ask anything…", ren
                     )}
 
                     {/* Sources — only on last assistant message when done */}
-                    {(msg as any).sources && (msg as any).sources.length > 0 && !agent.isProcessing && (
-                      <Sources autoOpen count={(msg as any).sources.length}>
-                        <SourcesTrigger count={(msg as any).sources.length} />
+                    {msg.sources && msg.sources.length > 0 && !agent.isProcessing && (
+                      <Sources autoOpen count={msg.sources.length}>
+                        <SourcesTrigger count={msg.sources.length} />
                         <SourcesContent>
-                          {(msg as any).sources.map((s: any) => (
+                          {msg.sources.map((s: any) => (
                             <Source key={s.id} href={s.url} title={s.title} domain={s.domain} />
                           ))}
                         </SourcesContent>
@@ -271,9 +277,9 @@ export function AgentUI({ agent, className, placeholder = "Ask anything…", ren
                     )}
 
                     {/* Related questions */}
-                    {(msg as any).related && (msg as any).related.length > 0 && !agent.isProcessing && (
+                    {msg.related && msg.related.length > 0 && !agent.isProcessing && (
                       <div className="mt-3 flex flex-wrap gap-1.5">
-                        {(msg as any).related.map((q: string, qi: number) => (
+                        {msg.related.map((q: string, qi: number) => (
                           <button key={qi} type="button"
                             className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors"
                             onClick={() => agent.send(q)}>

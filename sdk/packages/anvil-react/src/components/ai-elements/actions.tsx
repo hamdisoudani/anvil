@@ -28,7 +28,6 @@ interface ActionProps extends React.ComponentProps<typeof Button> {
   tooltip?: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  onClick?: () => void;
 }
 
 export function Action({ tooltip, label, icon: Icon, className, ...props }: ActionProps) {
@@ -40,11 +39,11 @@ export function Action({ tooltip, label, icon: Icon, className, ...props }: Acti
         size="icon"
         aria-label={label}
         title={tooltip ?? label}
-        onClick={() => setOpen(false)}
+        {...props}
+        onClick={(e) => { setOpen(false); props.onClick?.(e); }}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         className={cn("h-6 w-6 sm:h-7 sm:w-7", className)}
-        {...props}
       >
         <Icon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
       </Button>

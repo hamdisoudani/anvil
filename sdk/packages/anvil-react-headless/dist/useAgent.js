@@ -38,7 +38,7 @@ import { useCallback, useState, useRef, useEffect, startTransition } from "react
 import { useSession, useChat, useAgentState, } from ".";
 // ── Hook ─────────────────────────────────────────────────────────
 export function useAgent(options = {}) {
-    const { sessionId: initialSessionId, tools: toolHandlers = {}, renderTool: _renderers, onStatusChange, onEvent: onEventCb, onStreamToggle: _onStreamToggle, onInterrupt, } = options;
+    const { sessionId: initialSessionId, tools: toolHandlers = {}, onStatusChange, onEvent: onEventCb, onInterrupt, } = options;
     // Shared event stream (single source of truth)
     const [sharedEvents, setSharedEvents] = useState([]);
     // Pending interrupt state
@@ -55,13 +55,6 @@ export function useAgent(options = {}) {
             onStatusChange?.("error");
         if (e.type === "done")
             onStatusChange?.("done");
-        // Detect frontend tool calls (interrupts) from the event stream
-        if (e.type === "tool.call" && e.payload?.is_frontend) {
-            const call = e.payload;
-            // Wait for the next tick to see if useSession already handled it
-            // (onToolCall callback in useSession runs first since it's registered
-            //  before our onEvent handler)
-        }
     }, [onEventCb, onStatusChange]);
     // Handle tool calls — both server tools and frontend tools (interrupts)
     const onToolCall = useCallback(async (call) => {
@@ -113,6 +106,13 @@ export function useAgent(options = {}) {
     const isProcessing = session.status === "running" || session.status === "starting";
     const isDone = session.status === "done";
     const error = session.error?.message ?? agentState.error ?? null;
+    // Store session methods in refs so callbacks don't depend on session object identity
+    const startRef = useRef();
+    const cancelRef = useRef();
+    useEffect(() => {
+        startRef.current = session.start;
+        cancelRef.current = session.cancel;
+    }, [session.start, session.cancel]);
     // Send: start a new run or continue
     const send = useCallback(async (text) => {
         if (!text.trim())
@@ -121,25 +121,25 @@ export function useAgent(options = {}) {
         setPendingInterrupt(null);
         pendingInterruptRef.current = null;
         try {
-            const sid = await session.start(text);
+            const sid = await startRef.current?.(text);
             return sid;
         }
         catch (err) {
             console.error("useAgent.send failed:", err);
             throw err;
         }
-    }, [session]);
+    }, []);
     // Cancel
     const cancel = useCallback(() => {
-        session.cancel();
-    }, [session]);
+        cancelRef.current?.();
+    }, []);
     // Reset: cancel + clear events
     const reset = useCallback(() => {
         setSharedEvents([]);
         setPendingInterrupt(null);
         pendingInterruptRef.current = null;
-        session.cancel();
-    }, [session]);
+        cancelRef.current?.();
+    }, []);
     // Approve/reject interrupt
     const approveInterrupt = useCallback((result) => {
         const intr = pendingInterruptRef.current;

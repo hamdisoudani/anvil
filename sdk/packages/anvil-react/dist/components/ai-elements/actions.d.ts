@@ -13,7 +13,6 @@ interface ActionProps extends React.ComponentProps<typeof Button> {
     icon: React.ComponentType<{
         className?: string;
     }>;
-    onClick?: () => void;
 }
 export declare function Action({ tooltip, label, icon: Icon, className, ...props }: ActionProps): React.JSX.Element;
 export {};

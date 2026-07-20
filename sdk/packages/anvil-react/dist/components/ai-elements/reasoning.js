@@ -10,11 +10,14 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 import { ChevronRight, Brain } from "lucide-react";
 export function Reasoning({ isStreaming = false, defaultOpen = true, className, children, ...props }) {
-    const [open, setOpen] = React.useState(defaultOpen);
-    // Auto-collapse when streaming stops
+    const [open, setOpen] = React.useState(defaultOpen && isStreaming);
+    const prevStreaming = React.useRef(isStreaming);
+    // Auto-collapse when streaming stops (skip first render to avoid flash)
     React.useEffect(() => {
-        if (!isStreaming)
+        if (prevStreaming.current !== isStreaming && !isStreaming) {
             setOpen(false);
+        }
+        prevStreaming.current = isStreaming;
     }, [isStreaming]);
     return (_jsx(ReasoningContext.Provider, { value: { open, setOpen, isStreaming }, children: _jsx("div", { className: cn("my-2 border border-muted/60 rounded-lg overflow-hidden", className), ...props, children: children }) }));
 }

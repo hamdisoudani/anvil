@@ -38,9 +38,13 @@ export function Sources({
   ...props
 }: SourcesProps) {
   const [open, setOpen] = React.useState(defaultOpen ?? autoOpen);
-  // Re-sync when autoOpen flips (e.g. on completion)
+  // Re-sync when autoOpen flips (track direction with a ref)
+  const prevAutoOpen = React.useRef(autoOpen);
   React.useEffect(() => {
-    if (autoOpen) setOpen(true);
+    if (prevAutoOpen.current !== autoOpen) {
+      setOpen(autoOpen);
+      prevAutoOpen.current = autoOpen;
+    }
   }, [autoOpen]);
   return (
     <SourcesContext.Provider value={{ autoOpen }}>
