@@ -152,6 +152,7 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
   const [eventCount, setEventCount] = useState(0);
   const [lastEventId, setLastEventId] = useState(0);
   const subRef = useRef<Subscription | null>(null);
+  const sessionRef = useRef<string | null>(null); // track current session for dedup
 
   const onEventRef = useRef(opts.onEvent);
   const onToolCallRef = useRef(opts.onToolCall);
@@ -159,6 +160,11 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
   onToolCallRef.current = opts.onToolCall;
 
   const subscribe = useCallback((id: string) => {
+    // Guard: don't re-subscribe if already subscribed to THIS session
+    if (sessionRef.current === id && subRef.current) {
+      return;
+    }
+    sessionRef.current = id;
     subRef.current?.unsubscribe();
     setStatus("running");
     setEventCount(0);
@@ -230,9 +236,11 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
     setError(null);
     try {
       const { sessionId: newId } = await client.startTask(task);
-      // Don't call subscribe() here — the useEffect will handle it
-      // when sessionId changes, avoiding double-subscription race.
+      // Subscribe immediately AND set sessionId.
+      // The sessionRef guard in subscribe() prevents the effect from
+      // double-subscribing when sessionId changes.
       setSessionId(newId);
+      subscribe(newId);
       return newId;
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
@@ -246,8 +254,8 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
     setError(null);
     try {
       const { sessionId: newId } = await client.resume(id);
-      // Also don't call subscribe() here — let the effect handle it.
       setSessionId(newId);
+      subscribe(newId);
       return newId;
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));

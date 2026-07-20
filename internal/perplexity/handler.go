@@ -224,7 +224,11 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question s
 }
 
 // handleStream subscribes to the orchestrator's events for a session.
-// Supports ?since=N parameter: resume from event N (skip earlier events).
+// Supports ?since=N parameter and Last-Event-ID header:
+// both tell us which events the client already saw so we skip replay.
+// After done/error the stream stays open — the client close is the
+// signal to tear down. This prevents EventSource auto-reconnect
+// from re-receiving the full replay buffer.
 func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := strings.TrimPrefix(r.URL.Path, "/perplexity/stream/")
 	if sessionID == "" {
@@ -241,24 +245,21 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse ?since=N — skip replayed events already seen by the client.
-	// The client increments N as it processes events, so on reconnect
-	// we skip the first N events from the replay buffer.
+	// Determine how many events to skip (events the client already saw).
+	// Priority: ?since=N query param > Last-Event-ID header.
 	skipCount := 0
-	sinceStr := r.URL.Query().Get("since")
-	if sinceStr != "" {
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
 		fmt.Sscanf(sinceStr, "%d", &skipCount)
+	} else if lastID := r.Header.Get("Last-Event-ID"); lastID != "" {
+		fmt.Sscanf(lastID, "%d", &skipCount)
 	}
 
 	ch := h.Bus.Subscribe(sessionID)
 	defer h.Bus.Unsubscribe(sessionID, ch)
 
-	// Send the initial ready event
 	fmt.Fprintf(w, "event: ready\ndata: {\"session_id\":\"%s\"}\n\n", sessionID)
 	flusher.Flush()
 
-	// Event counter — used for SSE id: field and ?since tracking.
-	// Starts at skipCount so the client can use lastEventId to resume.
 	eventID := skipCount
 
 	ticker := time.NewTicker(15 * time.Second)
@@ -273,9 +274,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 			}
 			eventID++
 
-			// Skip replayed events that the client already saw.
-			// The first `skipCount` events from the replay buffer
-			// are skipped; events AFTER skipCount are sent.
+			// Skip replayed events the client already saw
 			if eventID <= skipCount {
 				continue
 			}
@@ -283,9 +282,12 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(e)
 			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", eventID, e.Type, data)
 			flusher.Flush()
-			if e.Type == EventDone || e.Type == EventError {
-				return
-			}
+
+			// Do NOT close on done/error. Keep the stream open.
+			// The browser's EventSource will auto-reconnect if we close,
+			// causing a full replay-buffer re-send. Instead, let the
+			// client disconnect naturally (tab close, navigate away).
+			// The server still tears down when r.Context().Done() fires.
 		case <-ticker.C:
 			fmt.Fprint(w, ": keepalive\n\n")
 			flusher.Flush()
