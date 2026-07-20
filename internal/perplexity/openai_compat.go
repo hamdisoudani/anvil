@@ -55,11 +55,13 @@ func NewOpenAICompatibleRouter() *OpenAICompatibleRouter {
 func (r *OpenAICompatibleRouter) Name() string { return "openai-compatible" }
 
 // openAIRequest is the wire format the OpenAI API expects.
+// Uses messages array format (no top-level 'system' field) for
+// maximum compatibility — Groq, Together, vLLM, and others
+// don't support the non-standard 'system' field.
 type openAIRequest struct {
-	Model     string         `json:"model"`
-	MaxTokens int            `json:"max_tokens,omitempty"`
-	Stream    bool           `json:"stream"`
-	System    string         `json:"system,omitempty"`
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens,omitempty"`
+	Stream    bool            `json:"stream"`
 	Messages  []openAIMessage `json:"messages"`
 	Tools     []openAITool    `json:"tools,omitempty"`
 }
@@ -88,7 +90,9 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 		Model:     r.Model,
 		MaxTokens: req.MaxTokens,
 		Stream:    true,
-		System:    req.SystemPrompt,
+		Messages: []openAIMessage{
+			{Role: "system", Content: req.SystemPrompt},
+		},
 	}
 	if body.MaxTokens == 0 {
 		body.MaxTokens = 4096
