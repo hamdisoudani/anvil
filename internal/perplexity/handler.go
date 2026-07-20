@@ -125,6 +125,19 @@ func NewHandler(orch *Orchestrator) *Handler {
 
 // ServeHTTP dispatches.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// CORS — allow any Vercel preview + custom domain. Tighten in prod.
+	origin := r.Header.Get("Origin")
+	if origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	path := r.URL.Path
 	switch {
 	case path == "/perplexity/ask" && r.Method == "POST":
