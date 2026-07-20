@@ -254,10 +254,12 @@ export function useChat(sessionId, events) {
                         pendingSources = null;
                     }
                     currentAssistant.content += delta;
-                    // Trigger re-render — push a new object each chunk
+                    // Keep currentAssistant synced with out[] so that
+                    // out.indexOf(currentAssistant) works on the next chunk.
                     const idx = out.indexOf(currentAssistant);
                     if (idx >= 0) {
-                        out[idx] = { ...currentAssistant };
+                        currentAssistant = { ...currentAssistant };
+                        out[idx] = currentAssistant;
                     }
                     break;
                 }
@@ -266,7 +268,8 @@ export function useChat(sessionId, events) {
                         currentAssistant.isStreaming = false;
                         const idx = out.indexOf(currentAssistant);
                         if (idx >= 0) {
-                            out[idx] = { ...currentAssistant };
+                            currentAssistant = { ...currentAssistant };
+                            out[idx] = currentAssistant;
                         }
                         currentAssistant = null;
                     }
@@ -373,7 +376,8 @@ export function useChat(sessionId, events) {
                         currentAssistant.related = currentAssistant.related ?? p.related ?? undefined;
                         const idx = out.indexOf(currentAssistant);
                         if (idx >= 0) {
-                            out[idx] = { ...currentAssistant };
+                            currentAssistant = { ...currentAssistant };
+                            out[idx] = currentAssistant;
                         }
                         currentAssistant = null;
                     }
