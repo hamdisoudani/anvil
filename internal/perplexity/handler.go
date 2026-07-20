@@ -28,7 +28,11 @@ type StreamingBus struct {
 }
 
 // ReplayBufferSize is how many events to keep per session for late joiners.
-const ReplayBufferSize = 256
+// Sized large enough to hold a full agent run (plan + dozens of search
+// results + 100+ answer chunks + done). If a run exceeds this, the
+// oldest answer chunks are dropped — but session.start is protected
+// (see Publish) so the user message is always recoverable on reload.
+const ReplayBufferSize = 4096
 
 func NewStreamingBus() *StreamingBus {
 	return &StreamingBus{
@@ -87,15 +91,40 @@ func (b *StreamingBus) Unsubscribe(sessionID string, ch chan Event) {
 }
 
 func (b *StreamingBus) Publish(sessionID string, e Event) {
-	// Add to history (with size cap)
+	// Add to history (with size cap). SESSION-LIFETIME events
+	// (e.g. session.start) are protected from eviction so the
+	// user message is always recoverable on reload.
 	b.mu.Lock()
 	if _, ok := b.history[sessionID]; !ok {
 		b.history[sessionID] = make([]Event, 0, b.histSize)
 	}
 	hist := b.history[sessionID]
-	hist = append(hist, e)
+	if e.Type == EventSessionStart {
+		// Pin session.start at index 0 — never evict.
+		// Drop any other "pin" event we may have inserted (defensive).
+		filtered := hist[:0]
+		for _, h := range hist {
+			if h.Type != EventSessionStart {
+				filtered = append(filtered, h)
+			}
+		}
+		hist = append([]Event{e}, filtered...)
+	} else {
+		hist = append(hist, e)
+	}
 	if len(hist) > b.histSize {
-		hist = hist[len(hist)-b.histSize:]
+		// Drop oldest non-pinned events only.
+		excess := len(hist) - b.histSize
+		drop := 0
+		i := 0
+		for drop < excess && i < len(hist) {
+			if hist[i].Type != EventSessionStart {
+				hist = append(hist[:i], hist[i+1:]...)
+				drop++
+			} else {
+				i++
+			}
+		}
 	}
 	b.history[sessionID] = hist
 	subs := b.subscribers[sessionID]

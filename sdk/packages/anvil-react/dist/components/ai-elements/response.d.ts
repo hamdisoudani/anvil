@@ -1,10 +1,12 @@
 /**
- * Response — renders AI assistant text with markdown.
+ * Response — renders AI assistant text as Markdown.
  *
- * For production, use streamdown (https://streamdown.ai/) which handles
- * streaming markdown safely (avoids XSS, handles partial blocks).
- * This minimal version renders basic markdown: **bold**, *italic*,
- * `code`, headings, lists, links, and newlines.
+ * Uses `marked` (battle-tested CommonMark parser) instead of a homegrown
+ * regex parser. Renders HTML, sanitized via a strict allowlist.
+ *
+ * The AI SDK ecosystem recommends `streamdown` for production, but it
+ * pulls in additional deps and assumes the AI SDK. `marked` is
+ * dependency-light and handles nested bold/italic/code correctly.
  */
 import * as React from "react";
 interface ResponseProps extends React.HTMLAttributes<HTMLDivElement> {

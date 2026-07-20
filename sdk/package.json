@@ -27,6 +27,7 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "lucide-react": "^0.395.0",
+    "marked": "^18.0.6",
     "tailwind-merge": "^2.6.1"
   }
 }

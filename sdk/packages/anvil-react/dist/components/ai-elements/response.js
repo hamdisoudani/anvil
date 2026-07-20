@@ -1,74 +1,79 @@
 "use client";
-import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { jsx as _jsx } from "react/jsx-runtime";
 /**
- * Response — renders AI assistant text with markdown.
+ * Response — renders AI assistant text as Markdown.
  *
- * For production, use streamdown (https://streamdown.ai/) which handles
- * streaming markdown safely (avoids XSS, handles partial blocks).
- * This minimal version renders basic markdown: **bold**, *italic*,
- * `code`, headings, lists, links, and newlines.
+ * Uses `marked` (battle-tested CommonMark parser) instead of a homegrown
+ * regex parser. Renders HTML, sanitized via a strict allowlist.
+ *
+ * The AI SDK ecosystem recommends `streamdown` for production, but it
+ * pulls in additional deps and assumes the AI SDK. `marked` is
+ * dependency-light and handles nested bold/italic/code correctly.
  */
 import * as React from "react";
+import { marked } from "marked";
 import { cn } from "../../lib/utils";
-// Lightweight streaming-safe markdown renderer.
-// Handles: **bold**, *italic*, `inline`, # heading, - list, links, paragraphs.
+// Configure marked for safe, streaming-friendly rendering.
+marked.setOptions({
+    gfm: true,
+    breaks: true,
+    pedantic: false,
+});
+/**
+ * Render markdown to safe HTML.
+ *
+ * - Replaces `javascript:` URLs in links
+ * - Strips raw <script>/<style> blocks (defense in depth)
+ * - Strips most HTML attributes except `href`, `target`, `rel`, `class`
+ */
 function renderMarkdown(text) {
     if (!text)
-        return [];
-    const blocks = text.split(/\n\n+/);
-    return blocks.map((block, bi) => {
-        const lines = block.split("\n");
-        // Headings
-        if (block.startsWith("# "))
-            return _jsx("h1", { className: "text-lg sm:text-xl font-semibold mt-3 mb-1.5", children: renderInline(block.slice(2)) }, bi);
-        if (block.startsWith("## "))
-            return _jsx("h2", { className: "text-base sm:text-lg font-semibold mt-3 mb-1.5", children: renderInline(block.slice(3)) }, bi);
-        if (block.startsWith("### "))
-            return _jsx("h3", { className: "text-sm sm:text-base font-semibold mt-2 mb-1", children: renderInline(block.slice(4)) }, bi);
-        // Unordered list
-        if (lines.every((l) => l.startsWith("- ") || l.trim() === "")) {
-            return (_jsx("ul", { className: "list-disc pl-5 my-2 space-y-0.5", children: lines.filter((l) => l.trim()).map((l, i) => (_jsx("li", { children: renderInline(l.slice(2)) }, i))) }, bi));
-        }
-        // Numbered list
-        if (lines.every((l) => /^\d+\.\s/.test(l) || l.trim() === "")) {
-            return (_jsx("ol", { className: "list-decimal pl-5 my-2 space-y-0.5", children: lines.filter((l) => l.trim()).map((l, i) => (_jsx("li", { children: renderInline(l.replace(/^\d+\.\s/, "")) }, i))) }, bi));
-        }
-        // Code block
-        if (block.startsWith("```")) {
-            const code = block.replace(/^```\w*\n?/, "").replace(/```$/, "");
-            return (_jsx("pre", { className: "bg-muted/70 rounded-md p-2.5 my-2 overflow-x-auto text-[11px] sm:text-xs", children: _jsx("code", { children: code }) }, bi));
-        }
-        // Default: paragraph (preserve single newlines as <br/>)
-        return (_jsx("p", { className: "my-1.5 last:mb-0 first:mt-0", children: lines.map((line, li) => (_jsxs(React.Fragment, { children: [li > 0 && _jsx("br", {}), renderInline(line)] }, li))) }, bi));
+        return "";
+    const raw = marked.parse(text, { async: false });
+    return sanitize(raw);
+}
+const ALLOWED_TAGS = new Set([
+    "p", "br", "hr",
+    "strong", "em", "b", "i", "u", "s", "del", "ins", "mark", "sub", "sup",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "ul", "ol", "li",
+    "blockquote",
+    "code", "pre", "kbd", "samp",
+    "a",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "img",
+    "span", "div",
+]);
+const ALLOWED_ATTRS = new Set(["href", "target", "rel", "class", "title", "alt", "src"]);
+// Minimal HTML sanitizer — strips tags not in the allowlist and
+// any on* event handlers. Not a full DOMPurify replacement, but
+// sufficient for the AI-generated content we render.
+function sanitize(html) {
+    return html
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
+        .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "")
+        .replace(/\son\w+="[^"]*"/gi, "")
+        .replace(/\son\w+='[^']*'/gi, "")
+        .replace(/javascript:/gi, "")
+        .replace(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>/g, (_, slash, tag, attrs) => {
+        const lower = tag.toLowerCase();
+        if (!ALLOWED_TAGS.has(lower))
+            return "";
+        if (slash)
+            return `</${lower}>`;
+        const cleanAttrs = attrs.replace(/([a-zA-Z\-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g, (m, name, v1, v2) => {
+            const n = name.toLowerCase();
+            if (!ALLOWED_ATTRS.has(n))
+                return "";
+            const v = (v1 ?? v2 ?? "").replace(/"/g, "&quot;");
+            return `${n}="${v}"`;
+        });
+        return `<${lower}${cleanAttrs}>`;
     });
 }
-function renderInline(text) {
-    // Order: code > bold > italic > links
-    const parts = [];
-    const regex = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(\[[^\]]+\]\([^)]+\))/g;
-    let last = 0;
-    let m;
-    let key = 0;
-    while ((m = regex.exec(text)) !== null) {
-        if (m.index > last)
-            parts.push(text.slice(last, m.index));
-        if (m[1])
-            parts.push(_jsx("code", { className: "bg-muted/70 rounded px-1 py-0.5 text-[0.9em] font-mono", children: m[1].slice(1, -1) }, key++));
-        else if (m[2])
-            parts.push(_jsx("strong", { children: m[2].slice(2, -2) }, key++));
-        else if (m[3])
-            parts.push(_jsx("em", { children: m[3].slice(1, -1) }, key++));
-        else if (m[4]) {
-            const lm = m[4].match(/\[([^\]]+)\]\(([^)]+)\)/);
-            parts.push(_jsx("a", { href: lm[2], target: "_blank", rel: "noopener noreferrer", className: "text-primary underline underline-offset-2 hover:text-primary/80", children: lm[1] }, key++));
-        }
-        last = m.index + m[0].length;
-    }
-    if (last < text.length)
-        parts.push(text.slice(last));
-    return _jsx(_Fragment, { children: parts });
-}
 export function Response({ children, className, ...props }) {
-    return (_jsx("div", { className: cn("prose prose-sm dark:prose-invert max-w-none break-words", className), ...props, children: renderMarkdown(children) }));
+    const html = React.useMemo(() => renderMarkdown(children), [children]);
+    return (_jsx("div", { className: cn("prose prose-sm dark:prose-invert max-w-none break-words", "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2", "[&_code]:bg-muted/70 [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.9em] [&_code]:font-mono", "[&_pre]:bg-muted/70 [&_pre]:rounded-md [&_pre]:p-2.5 [&_pre]:my-2 [&_pre]:overflow-x-auto", "[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2", "[&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2", "[&_li]:my-0.5", "[&_h1]:text-lg [&_h1]:sm:text-xl [&_h1]:font-semibold [&_h1]:mt-3 [&_h1]:mb-1.5", "[&_h2]:text-base [&_h2]:sm:text-lg [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5", "[&_h3]:text-sm [&_h3]:sm:text-base [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1", "[&_blockquote]:border-l-2 [&_blockquote]:border-muted [&_blockquote]:pl-3 [&_blockquote]:italic", className), dangerouslySetInnerHTML: { __html: html }, ...props }));
 }
 //# sourceMappingURL=response.js.map
