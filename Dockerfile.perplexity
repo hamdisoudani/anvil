@@ -1,42 +1,53 @@
-# Anvil Perplexity — production Dockerfile
+# Anvil Perplexity — production Dockerfile (Railway/Fly/Render compatible)
 #
-# Multi-stage build: build the Go binary, then copy into a minimal image.
-# 
-# Build:    docker build -t perplexity .
-# Run:      docker run -p 8081:8081 -e ANTHROPIC_API_KEY=*** perplexity
-# Or compose:
-#   docker compose up
+# Multi-stage: builds the React frontend, then the Go binary embedding it.
 #
-# Deploy to: Railway, Fly.io, Render, GCP Cloud Run, AWS Fargate,
-# DigitalOcean App Platform, or any Docker host.
+# Build:    docker build -f Dockerfile.perplexity -t perplexity .
+# Run:      docker run -p 8081:8081 -e GROQ_API_KEY=*** perplexity
 
-# ── Build stage ────────────────────────────────────────────────
+# ── Frontend build stage ────────────────────────────────────────
+FROM node:20-alpine AS frontend
+WORKDIR /sdk
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+# Copy only what's needed for install (cache layer)
+COPY sdk/package.json sdk/pnpm-lock.yaml* ./
+COPY sdk/examples/chat-app/package.json ./examples/chat-app/
+COPY sdk/packages/anvil-client/package.json ./packages/anvil-client/
+COPY sdk/packages/anvil-react/package.json ./packages/anvil-react/
+COPY sdk/packages/anvil-react-headless/package.json ./packages/anvil-react-headless/
+RUN pnpm install --frozen-lockfile || pnpm install
+
+# Copy full SDK and build
+COPY sdk/ ./
+RUN pnpm --filter @anvil/client build && \
+    pnpm --filter @anvil/react-headless build && \
+    pnpm --filter @anvil/react build && \
+    pnpm --filter anvil-chat-app build
+
+# ── Go build stage ──────────────────────────────────────────────
 FROM golang:1.22-alpine AS build
 WORKDIR /src
-
-# Cache deps
 COPY go.mod go.sum ./
 RUN go mod download
-
-# Build the binary
 COPY . .
+# Overlay the freshly built chat-app dist into the Go embed location
+COPY --from=frontend /sdk/examples/chat-app/dist /src/internal/perplexity/chat_app_dist
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/perplexity ./cmd/perplexity-server
 
-# ── Runtime stage ─────────────────────────────────────────────
+# ── Runtime stage ───────────────────────────────────────────────
 FROM alpine:3.19
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=build /out/perplexity /app/perplexity
 
-# Vercel / Railway / Fly default to 8080; we use 8081 for clarity
+# Use $PORT (Railway/Render/Fly) if set, else 8081
 ENV PORT=8081
 EXPOSE 8081
 
-# Healthcheck for orchestrators
 HEALTHCHECK --interval=30s --timeout=3s \
-  CMD wget -q -O - http://localhost:8081/ > /dev/null || exit 1
+  CMD wget -q -O - http://localhost:${PORT}/healthz > /dev/null || exit 1
 
-# Run as non-root
 RUN adduser -D -u 1000 anvil
 USER anvil
 
