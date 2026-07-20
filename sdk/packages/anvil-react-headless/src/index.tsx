@@ -210,22 +210,29 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
     });
   }, [client, getTool]);
 
-  // Auto-resume on mount if sessionId provided
+  // Subscribe when sessionId changes (either from start/resume or opts on mount)
   useEffect(() => {
-    if (opts.sessionId) {
-      subscribe(opts.sessionId);
-      return () => subRef.current?.unsubscribe();
+    if (sessionId) {
+      subscribe(sessionId);
+      return () => {
+        subRef.current?.unsubscribe();
+        subRef.current = null;
+      };
     }
     return undefined;
-  }, [opts.sessionId, subscribe]);
+  }, [sessionId, subscribe]);
+  // NOTE: This is the ONLY place subscribe() is called.
+  // start() and resume() set sessionId; the effect subscribes.
+  // This eliminates the double-subscription bug (BUG-H1).
 
   const start = useCallback(async (task: string) => {
     setStatus("starting");
     setError(null);
     try {
       const { sessionId: newId } = await client.startTask(task);
+      // Don't call subscribe() here — the useEffect will handle it
+      // when sessionId changes, avoiding double-subscription race.
       setSessionId(newId);
-      subscribe(newId);
       return newId;
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
@@ -239,8 +246,8 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
     setError(null);
     try {
       const { sessionId: newId } = await client.resume(id);
+      // Also don't call subscribe() here — let the effect handle it.
       setSessionId(newId);
-      subscribe(newId);
       return newId;
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));

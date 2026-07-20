@@ -127,11 +127,15 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }: AnvilPerple
   // Back/forward navigation
   useEffect(() => {
     const onPop = () => {
-      setThreadId(getThreadIdFromUrl());
+      const tid = getThreadIdFromUrl();
+      if (tid !== threadId) {
+        setSharedEvents([]);
+        setThreadId(tid);
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [threadId]);
 
   // Auto-scroll
   useEffect(() => {
@@ -158,10 +162,12 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }: AnvilPerple
     }
   }, [session.status, session.sessionId, messages]);
 
-  // ── Submit: start a new search ──────────────────────────────
+  // Submit: start a new search
   const submit = useCallback(async (text: string) => {
     if (!text.trim()) return;
     setInput("");
+    // BUG-U5 FIX: clear shared events for a fresh session
+    setSharedEvents([]);
     try {
       const sid = await session.start(text);
       navigateToThread(sid);
@@ -169,6 +175,14 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }: AnvilPerple
     } catch (err) {
       console.error("Failed to start session:", err);
     }
+  }, [session]);
+
+  // New thread: reset everything
+  const newThread = useCallback(() => {
+    navigateToHome();
+    setThreadId(null);
+    setSharedEvents([]);
+    session.cancel();
   }, [session]);
 
   const isRunning = session.status === "running" || session.status === "starting";
@@ -199,11 +213,7 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }: AnvilPerple
               <TooltipContent>History</TooltipContent>
             </Tooltip>
             <Button variant="ghost" size="sm" className="text-[10px] sm:text-xs h-7 sm:h-8"
-              onClick={() => {
-                navigateToHome();
-                setThreadId(null);
-                session.cancel();
-              }}>
+              onClick={newThread}>
               <Plus className="mr-1 h-3 sm:h-3.5 w-3 sm:w-3.5" /> New thread
             </Button>
           </div>
@@ -228,6 +238,7 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }: AnvilPerple
                       className="flex-1 text-left text-xs py-1.5 px-2 rounded hover:bg-accent/30 truncate"
                       onClick={() => {
                         navigateToThread(t.id);
+                        setSharedEvents([]);
                         setThreadId(t.id);
                         setShowHistory(false);
                       }}>
@@ -299,6 +310,11 @@ export function AnvilPerplexity({ className, defaultFocus = "web" }: AnvilPerple
                     onChange={(e) => setInput(e.target.value)}
                     placeholder="Ask anything…" rows={1}
                     disabled={isRunning}
+                    enterKeyHint="send"
+                    inputMode="text"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    autoComplete="off"
                     className="flex-1 min-h-[22px] sm:min-h-[24px] max-h-36 sm:max-h-48 resize-none border-0 shadow-none focus:outline-none bg-transparent px-1 text-sm leading-5 sm:leading-6 py-[3px]"
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(input); }}} />
                   <div className="flex items-center gap-1 shrink-0">
@@ -457,21 +473,21 @@ function AssistantBubble({ msg, isLast, isRunning }: { msg: ChatMessage; isLast:
 
       {isLast && !isRunning && msg.content && (
         <div className="flex items-center gap-0.5 sm:gap-1 pt-0.5 sm:pt-1 text-muted-foreground">
-          <ActionButton icon={Copy} label="Copy answer" />
-          <ActionButton icon={ThumbsUp} label="Good answer" />
-          <ActionButton icon={ThumbsDown} label="Bad answer" />
-          <ActionButton icon={RotateCw} label="Regenerate" />
+          <ActionButton icon={Copy} label="Copy answer" onClick={() => navigator.clipboard.writeText(msg.content)} />
+          <ActionButton icon={ThumbsUp} label="Good answer" onClick={() => {}} />
+          <ActionButton icon={ThumbsDown} label="Bad answer" onClick={() => {}} />
+          <ActionButton icon={RotateCw} label="Regenerate" onClick={() => {}} />
         </div>
       )}
     </div>
   );
 }
 
-function ActionButton({ icon: Icon, label }: { icon: any; label: string }) {
+function ActionButton({ icon: Icon, label, onClick }: { icon: any; label: string; onClick: () => void }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8">
+        <Button variant="ghost" size="icon" className="h-7 w-7 sm:h-8 sm:w-8" onClick={onClick}>
           <Icon className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
         </Button>
       </TooltipTrigger>

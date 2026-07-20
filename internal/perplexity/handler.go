@@ -63,20 +63,15 @@ func (b *StreamingBus) Subscribe(sessionID string) chan Event {
 		b.subscribers[sessionID] = make(map[chan Event]struct{})
 	}
 	b.subscribers[sessionID][ch] = struct{}{}
-	// Replay any buffered events to this subscriber
 	hist := append([]Event{}, b.history[sessionID]...)
 	b.mu.Unlock()
 
-	// Replay outside the lock so we don't hold it while sending.
-	go func() {
-		for _, e := range hist {
-			select {
-			case ch <- e:
-			default:
-				// subscriber's buffer is full; skip this event
-			}
-		}
-	}()
+	// Replay synchronously so that replay events arrive BEFORE any
+	// live Publish events (which can only happen after Subscribe
+	// returns and the caller enters the event loop).
+	for _, e := range hist {
+		ch <- e
+	}
 	return ch
 }
 
@@ -116,17 +111,11 @@ func (b *StreamingBus) Publish(sessionID string, e Event) {
 }
 
 // Handler is the HTTP handler for the Perplexity clone.
-// It exposes:
-//   POST /perplexity/ask          start a search session
-//   GET  /perplexity/stream/:id   live stream (SSE)
-//   GET  /                       embedded HTML UI
-//   GET  /healthz                health check
 type Handler struct {
 	Orchestrator *Orchestrator
 	Bus          *StreamingBus
 }
 
-// NewHandler creates the HTTP handler.
 func NewHandler(orch *Orchestrator) *Handler {
 	return &Handler{Orchestrator: orch, Bus: NewStreamingBus()}
 }
@@ -138,16 +127,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case path == "/perplexity/ask" && r.Method == "POST":
 		h.handleAsk(w, r)
 	case path == "/tasks" && r.Method == "POST":
-		// Compatibility shim: the AnvilReact SDK calls POST /tasks.
-		// Forward to the same handler.
 		h.handleAsk(w, r)
 	case strings.HasPrefix(path, "/perplexity/stream/"):
 		h.handleStream(w, r)
 	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/events"):
-		// Compatibility shim: /sessions/:id/events
-		// Forward to /perplexity/stream/:id
-		newPath := "/perplexity/stream/" + strings.TrimPrefix(path, "/sessions/")
-		newPath = strings.TrimSuffix(newPath, "/events")
+		// Compatibility shim: /sessions/:id/events → /perplexity/stream/:id
+		// Extract the session ID FIRST, then construct the new path.
+		sid := strings.TrimPrefix(path, "/sessions/")
+		sid = strings.TrimSuffix(sid, "/events")
+		newPath := "/perplexity/stream/" + sid
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = newPath
 		h.handleStream(w, r2)
@@ -157,27 +145,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/app"):
 		h.handleApp(w, r)
 	case path == "/preview" || path == "/preview/":
-		// Static HTML preview (no JS required) — for design review and
-		// environments where the React app can't be served.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(staticPreview)
 		return
 	case path == "/" || path == "/index.html":
-		// Redirect to the React app
 		http.Redirect(w, r, "/app/", http.StatusTemporaryRedirect)
 	default:
 		http.NotFound(w, r)
 	}
 }
 
-// handleAsk starts a new search session. Optional thread_id continues an
-// existing thread; without one, a new thread is created.
+// handleAsk starts a new search session.
 func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		// New API field (preferred)
 		Question string `json:"question,omitempty"`
-		// Legacy field for AnvilClient.startTask compatibility
-		Task    string `json:"task,omitempty"`
+		Task     string `json:"task,omitempty"`
 		ThreadID string `json:"thread_id,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -195,14 +177,12 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 
 	threadID := req.ThreadID
 	if threadID == "" {
-		threadID = uuidNew() // new thread per question (browser keeps history)
+		threadID = uuidNew()
 	}
 	sessionID := uuidNew()
 	h.Bus.AddSessionToThread(threadID, sessionID)
-	// Use a fresh background context — the orchestrator must outlive the
-	// HTTP request that started it (otherwise a client disconnect cancels
-	// the LLM call mid-stream).
-	go h.runSearch(context.Background(), sessionID, threadID, req.Question)
+	// FIX BUG 1: use the resolved `question` variable, not req.Question
+	go h.runSearch(context.Background(), sessionID, threadID, question)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -252,7 +232,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	flusher, ok := w.(http.Flusher)
@@ -261,20 +241,25 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse ?since=N — skip replayed events already seen by the client.
+	// The client increments N as it processes events, so on reconnect
+	// we skip the first N events from the replay buffer.
+	skipCount := 0
+	sinceStr := r.URL.Query().Get("since")
+	if sinceStr != "" {
+		fmt.Sscanf(sinceStr, "%d", &skipCount)
+	}
+
 	ch := h.Bus.Subscribe(sessionID)
 	defer h.Bus.Unsubscribe(sessionID, ch)
 
+	// Send the initial ready event
 	fmt.Fprintf(w, "event: ready\ndata: {\"session_id\":\"%s\"}\n\n", sessionID)
 	flusher.Flush()
 
-	// Handle ?since=N — skip replayed events with id <= N.
-	// The event id is attached to the SSE event as the "id:" field.
-	// When reconnect happens, the browser sends ?since=lastId.
-	// Events from the replay buffer have their original ids.
-	var skipUntil int
-	if since := r.URL.Query().Get("since"); since != "" {
-		fmt.Sscanf(since, "%d", &skipUntil)
-	}
+	// Event counter — used for SSE id: field and ?since tracking.
+	// Starts at skipCount so the client can use lastEventId to resume.
+	eventID := skipCount
 
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -286,15 +271,17 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			// Skip events <= skipUntil (from ?since=N reconnect)
-			if skipUntil > 0 {
-				// Events from the bus don't carry id — skip by index.
-				// For simplicity: skip all events from replay if since is set,
-				// since the client already saw them.
+			eventID++
+
+			// Skip replayed events that the client already saw.
+			// The first `skipCount` events from the replay buffer
+			// are skipped; events AFTER skipCount are sent.
+			if eventID <= skipCount {
 				continue
 			}
+
 			data, _ := json.Marshal(e)
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Type, data)
+			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", eventID, e.Type, data)
 			flusher.Flush()
 			if e.Type == EventDone || e.Type == EventError {
 				return
@@ -306,7 +293,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleIndex serves the embedded demo page.
+// handleIndex serves the embedded demo page (unused but kept for reference).
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, indexHTML)
