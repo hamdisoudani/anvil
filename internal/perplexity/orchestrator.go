@@ -81,6 +81,10 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 		}
 	}
 
+	// NOTE: session.start is emitted by the handler (runSearch) BEFORE
+	// calling Run, so it appears first in the replay buffer — letting
+	// the React SDK render the user message on reload.
+
 	// ── Step 1: PLAN ────────────────────────────────────────────────
 	emit(EventPlanStep, map[string]interface{}{"id": 1, "intent": "Planning the search", "status": "running"})
 	plan, err := o.PlanSearch(ctx, question)
