@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -101,6 +102,10 @@ func (t *FrontendTool) Execute(ctx context.Context, args map[string]interface{})
 			"input":      args,
 			"is_frontend": true, // hint to clients
 		},
+	}
+	// Check if the stream channel is closed before writing
+	if t.stream.closed.Load() {
+		return nil, fmt.Errorf("frontend tool %s: session stream closed", t.name)
 	}
 	select {
 	case t.stream.Ch <- callEvent:

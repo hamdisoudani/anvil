@@ -100,12 +100,30 @@ type Session struct {
 	onSlowSubscriber func(sub *Sub, e Event) // hook for metrics
 	logger  Logger
 	done    chan struct{}
+	middleware []Middleware
 }
 
 // ReadState safely reads the current step and history length. The HTTP
 // server (and any external observer) must use this — not read State
 // directly — because the loop goroutine mutates it. (Race-detector
 // caught this: see TestServer_Status.)
+// applyMiddleware wraps a step with all configured middleware.
+// Returns the same step unchanged if no middleware is configured.
+func (s *Session) applyMiddleware(step MiddlewareStep, mtype MiddlewareType) MiddlewareStep {
+	if len(s.middleware) == 0 {
+		return step
+	}
+	wrapped := step
+	for i := len(s.middleware) - 1; i >= 0; i-- {
+		m := s.middleware[i]
+		current := wrapped // capture
+		wrapped = m(func(ctx context.Context, req MiddlewareRequest) (MiddlewareResponse, error) {
+			return current(ctx, req)
+		})
+	}
+	return wrapped
+}
+
 func (s *Session) ReadState() (step int, subCount int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -121,6 +139,7 @@ type Agent struct {
 	tools       map[string]Tool
 	cfg         Config
 	recordStore RunRecordStore
+	middleware []Middleware
 }
 
 type Config struct {
@@ -179,6 +198,7 @@ func (a *Agent) Resume(ctx context.Context, sessionID uuid.UUID) (*Session, *Sub
 
 // loop is the heart. Runs until done, paused, or context cancelled.
 // Every step: think → act → observe → checkpoint (if due) → emit.
+// Middleware is applied around LLM calls (s.think) and tool execution (s.executeTool).
 func (s *Session) loop() {
 	defer close(s.done)
 	for {
@@ -198,7 +218,7 @@ func (s *Session) loop() {
 		}
 		s.mu.Unlock()
 
-		// 1. Think — ask LLM what to do next
+		// 1. Think — ask LLM what to do next (wrapped in middleware)
 		stepStart := time.Now()
 		action, err := s.think()
 		if err != nil {
@@ -207,7 +227,7 @@ func (s *Session) loop() {
 			return
 		}
 
-		// 2. Act — if a tool call, execute it (idempotent)
+		// 2. Act — if a tool call, execute it (wrapped in middleware)
 		var observation interface{}
 		if action.IsTool() {
 			s.emit(Event{Type: EventToolCall, Payload: action.Event()})
@@ -223,8 +243,7 @@ func (s *Session) loop() {
 		s.State.History = append(s.State.History, action.Message)
 		s.mu.Unlock()
 
-		// 3.5. Record the step (the canonical RunRecord — fixes the
-		//      "RunRecord was documented but never written" bug).
+		// 3.5. Record the step
 		s.recordStep(action, observation, time.Since(stepStart))
 
 		// 4. Checkpoint on cadence

@@ -88,6 +88,7 @@ Output ONLY the JSON. No prose.`, currentYear)
 
 // extractJSON finds the JSON object in the LLM output.
 // Handles both {"...":...} and ```json\n{...}\n``` formats.
+// Tracks string contexts to avoid counting braces inside string values.
 func extractJSON(s string) string {
 	s = strings.TrimSpace(s)
 	// Strip markdown code fences
@@ -103,8 +104,25 @@ func extractJSON(s string) string {
 		return ""
 	}
 	depth := 0
+	inStr := false
+	escaped := false
 	for i := start; i < len(s); i++ {
-		switch s[i] {
+		c := s[i]
+		if inStr {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if c == '\\' {
+				escaped = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
 		case '{':
 			depth++
 		case '}':
@@ -112,6 +130,8 @@ func extractJSON(s string) string {
 			if depth == 0 {
 				return s[start : i+1]
 			}
+		case '"':
+			inStr = true
 		}
 	}
 	return ""

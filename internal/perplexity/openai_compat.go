@@ -116,10 +116,6 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+r.APIKey)
-	if strings.Contains(r.BaseURL, "nvidia") {
-		// NVIDIA NIM uses a different auth header convention
-		httpReq.Header.Set("Authorization", "Bearer "+r.APIKey)
-	}
 
 	resp, err := r.Client.Do(httpReq)
 	if err != nil {
@@ -147,6 +143,7 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 	reader := bufio.NewReader(resp.Body)
 	var fullText strings.Builder
 	usage := TokenUsage{}
+	stopReason := "stop"
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -178,12 +175,15 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 					onDelta(choice.Delta.Content)
 				}
 			}
+			if choice.FinishReason != "" {
+				stopReason = choice.FinishReason
+			}
 		}
 	}
 
 	return LLMResponse{
 		Content:    fullText.String(),
-		StopReason: "stop",
+		StopReason: stopReason,
 		Usage:      usage,
 	}, nil
 }

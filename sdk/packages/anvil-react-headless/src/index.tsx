@@ -737,9 +737,11 @@ export function useFrontendTool<TInput = unknown, TOutput = unknown>(
   tool: FrontendToolExecutor<TInput, TOutput>,
 ) {
   const { registerTool } = useAnvil();
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
   useEffect(() => {
-    return registerTool(tool);
-  }, [registerTool, tool]);
+    return registerTool(toolRef.current);
+  }, [registerTool]);
 }
 
 // ── useChat: high-level chat-style event reducer ─────────────────
@@ -774,6 +776,8 @@ export function useChat(sessionId: string | null, events?: AnvilEvent[]) {
     for (const e of allEvents) {
       switch (e.type) {
         case "session.start": {
+          // Reset any pending state from a previous session
+          pendingSources = null;
           // The user message is the task itself; emit it once.
           const task = (e.payload as any)?.task as string | undefined;
           if (task) {

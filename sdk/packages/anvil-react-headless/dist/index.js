@@ -471,9 +471,11 @@ export function useAnvilEvent(sessionId, type, handler) {
 // ── useFrontendTool: declare a browser-side tool ─────────────────
 export function useFrontendTool(tool) {
     const { registerTool } = useAnvil();
+    const toolRef = useRef(tool);
+    toolRef.current = tool;
     useEffect(() => {
-        return registerTool(tool);
-    }, [registerTool, tool]);
+        return registerTool(toolRef.current);
+    }, [registerTool]);
 }
 export function useChat(sessionId, events) {
     const { events: ownEvents } = useEvents(sessionId);
@@ -486,6 +488,8 @@ export function useChat(sessionId, events) {
         for (const e of allEvents) {
             switch (e.type) {
                 case "session.start": {
+                    // Reset any pending state from a previous session
+                    pendingSources = null;
                     // The user message is the task itself; emit it once.
                     const task = e.payload?.task;
                     if (task) {

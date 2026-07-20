@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // ── Agent Middleware ──────────────────────────────────────────────
 //
@@ -113,7 +116,11 @@ func WithAuth(validator func(ctx context.Context, toolName string) error) Middle
 	return func(next MiddlewareStep) MiddlewareStep {
 		return func(ctx context.Context, req MiddlewareRequest) (MiddlewareResponse, error) {
 			if req.Type == MiddlewareTool {
-				if err := validator(ctx, req.Payload.(string)); err != nil {
+				toolName, ok := req.Payload.(string)
+				if !ok {
+					return MiddlewareResponse{}, fmt.Errorf("auth: expected string payload for tool, got %T", req.Payload)
+				}
+				if err := validator(ctx, toolName); err != nil {
 					return MiddlewareResponse{}, err
 				}
 			}

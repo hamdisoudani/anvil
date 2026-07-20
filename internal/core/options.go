@@ -71,3 +71,9 @@ func WithRunRecordStore(s RunRecordStore) AgentOption {
 func WithConfig(c Config) AgentOption {
 	return func(a *Agent) { a.cfg = c }
 }
+
+// WithMiddleware attaches middleware to the agent execution path.
+// Middleware is applied around LLM calls and tool executions.
+func WithMiddleware(m ...Middleware) AgentOption {
+	return func(a *Agent) { a.middleware = append(a.middleware, m...) }
+}

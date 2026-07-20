@@ -1,6 +1,7 @@
 package perplexity
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -77,7 +78,7 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 			InputSchema: t.InputSchema,
 		})
 	}
-	// Convert messages — turn any with tool_use into assistant content blocks
+	// Convert messages
 	for _, m := range req.Messages {
 		am := anthropicMessage{Role: m.Role}
 		am.Content = append(am.Content, map[string]interface{}{
@@ -110,32 +111,47 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 	}
 
 	// Parse SSE stream
-	// Events: message_start, content_block_start, content_block_delta, content_block_stop,
-	// tool_use, message_delta, message_stop, error
+	// Anthropic sends lines like:
+	//   event: message_start
+	//   data: {"type":"message_start",...}
+	//
+	// We must read line-by-line (not json.NewDecoder) because "event:" lines
+	// are not valid JSON. Same pattern as openai_compat.go.
 	type sseEvent struct {
-		Type  string                 `json:"type"`
-		Index int                    `json:"index"`
-		Delta map[string]interface{} `json:"delta,omitempty"`
+		Type         string                 `json:"type"`
+		Index        int                    `json:"index"`
+		Delta        map[string]interface{} `json:"delta,omitempty"`
 		ContentBlock map[string]interface{} `json:"content_block,omitempty"`
-		Message map[string]interface{} `json:"message,omitempty"`
+		Message      map[string]interface{} `json:"message,omitempty"`
 	}
 
-	dec := json.NewDecoder(resp.Body)
 	var (
-		fullText strings.Builder
-		toolCalls []ToolCall
-		usage    = TokenUsage{}
+		fullText    strings.Builder
+		toolCalls   []ToolCall
+		usage       = TokenUsage{}
 		currentTool map[string]interface{}
 	)
 
+	reader := bufio.NewReader(resp.Body)
+	var ev sseEvent
 	for {
-		var ev sseEvent
-		if err := dec.Decode(&ev); err != nil {
+		line, err := reader.ReadString('\n')
+		if err != nil {
 			if err == io.EOF {
 				break
 			}
 			return LLMResponse{}, err
 		}
+		line = strings.TrimRight(line, "\r\n")
+		if strings.HasPrefix(line, "data: ") {
+			data := strings.TrimPrefix(line, "data: ")
+			if err := json.Unmarshal([]byte(data), &ev); err != nil {
+				continue // skip malformed data lines
+			}
+		} else {
+			continue // skip "event:" lines, blank lines, etc.
+		}
+
 		switch ev.Type {
 		case "message_start":
 			if msg, ok := ev.Message["usage"].(map[string]interface{}); ok {
@@ -170,8 +186,8 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 			if currentTool != nil {
 				inputStr, _ := currentTool["input"].(string)
 				tc := ToolCall{
-					ID:    currentTool["id"].(string),
-					Name:  currentTool["name"].(string),
+					ID:    safeStr(currentTool["id"]),
+					Name:  safeStr(currentTool["name"]),
 					Input: json.RawMessage(inputStr),
 				}
 				toolCalls = append(toolCalls, tc)
@@ -186,12 +202,28 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 		}
 	}
 
+	// Extract stop_reason from the last message_delta if possible
+	stopReason := "end_turn"
+	if ev.Delta != nil {
+		if sr, ok := ev.Delta["stop_reason"].(string); ok && sr != "" {
+			stopReason = sr
+		}
+	}
+
 	return LLMResponse{
 		Content:    fullText.String(),
 		ToolCalls:  toolCalls,
-		StopReason: "end_turn",
+		StopReason: stopReason,
 		Usage:      usage,
 	}, nil
+}
+
+// safeStr returns s if non-nil, else "". Avoids nil dereference on type assertions.
+func safeStr(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 // uuid import shim (used in agents below)
