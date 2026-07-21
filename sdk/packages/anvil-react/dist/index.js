@@ -14,7 +14,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
  * - URL hash routing: /#/thread/<id> for reloadable threads.
  * - Thread history saved to localStorage.
  */
-import { useState, useRef, useEffect, useMemo, useCallback, } from "react";
+import { useState, useRef, useEffect, useCallback, } from "react";
 import { useSession, useChat, useAgentState, } from "@anvil/react-headless";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
@@ -27,8 +27,9 @@ import { Sources, SourcesTrigger, SourcesContent, Source, } from "./components/a
 import { Reasoning, ReasoningTrigger, ReasoningContent, } from "./components/ai-elements/reasoning";
 import { Loader } from "./components/ai-elements/loader";
 import { Actions, Action } from "./components/ai-elements/actions";
+import { ErrorBanner } from "./components/ai-elements/error-banner";
 import { cn } from "./lib/utils";
-import { Search, ArrowUp, Sparkles, Globe, GraduationCap, Newspaper, MessageCircle, Copy, ThumbsUp, ThumbsDown, RotateCw, Plus, History, X, Trash2, Check, } from "lucide-react";
+import { Search, ArrowUp, Sparkles, Globe, GraduationCap, Newspaper, MessageCircle, Copy, ThumbsUp, ThumbsDown, RotateCw, Plus, History, X, Trash2, Check, XCircle, } from "lucide-react";
 // ── Config ───────────────────────────────────────────────────────
 const FOCUS_MODES = [
     { id: "web", label: "Web", icon: Globe },
@@ -174,7 +175,19 @@ export function AnvilPerplexity({ className, defaultFocus = "web", }) {
                                             deleteThread(t.id);
                                             setThreads(loadThreads());
                                         }, children: _jsx(Trash2, { className: "h-3 w-3" }) })] }, t.id))))] }) })), _jsx(Conversation, { children: showLanding ? (_jsxs(ConversationContent, { children: [_jsx(ConversationEmptyState, { title: "Where knowledge begins", description: "Ask anything. Anvil searches the web, reads the top sources, and writes a cited answer.", icon: _jsx(Sparkles, { className: "h-6 w-6" }) }), _jsx(LandingSuggestions, { focus: focus, onFocusChange: setFocus, onSubmit: submit })] })) : (_jsxs(ConversationContent, { children: [messages.map((m, i) => (_jsx(MessageView, { msg: m, isLast: i === messages.length - 1, isRunning: isRunning, agentState: agentState, isFirstUser: isFirstUserAfterAssistant(messages, i) }, m.id))), isRunning &&
-                                messages.filter((m) => m.role === "assistant").length === 0 && (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: "AI" }), _jsx(MessageContent, { variant: "flat", children: _jsxs("div", { className: "flex items-center gap-2 text-xs text-muted-foreground", children: [_jsx(Loader, { size: 14 }), _jsx("span", { children: "Thinking\u2026" })] }) })] })), session.error && (_jsx("div", { className: "mt-3 rounded-lg border border-destructive/50 bg-destructive/5 p-3", children: _jsxs("div", { className: "flex items-start gap-2", children: [_jsx(X, { className: "h-4 w-4 text-destructive mt-0.5 shrink-0" }), _jsxs("div", { className: "min-w-0", children: [_jsx("div", { className: "text-sm font-medium text-destructive", children: "Error" }), _jsx("div", { className: "text-xs text-destructive/80 mt-1 break-words", children: session.error.message })] })] }) }))] })) }), _jsx("div", { className: "border-t bg-background shrink-0", style: { paddingBottom: "env(safe-area-inset-bottom, 8px)" }, children: _jsx("div", { className: "p-2 sm:p-4", children: _jsxs("form", { onSubmit: (e) => {
+                                messages.filter((m) => m.role === "assistant").length === 0 && (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: "AI" }), _jsx(MessageContent, { variant: "flat", children: _jsxs("div", { className: "flex items-center gap-2 text-xs text-muted-foreground", children: [_jsx(Loader, { size: 14 }), _jsx("span", { children: "Thinking\u2026" })] }) })] })), (agentState.error || session.error) && (_jsx("div", { className: "mt-3", children: _jsx(ErrorBanner, { error: agentState.error ?? {
+                                        message: session.error.message,
+                                        severity: "error",
+                                        retryable: true,
+                                    }, onRetry: isRunning
+                                        ? undefined
+                                        : () => {
+                                            const lastUser = [...messages]
+                                                .reverse()
+                                                .find((m) => m.role === "user");
+                                            if (lastUser?.content)
+                                                void submit(lastUser.content);
+                                        } }) }))] })) }), _jsx("div", { className: "border-t bg-background shrink-0", style: { paddingBottom: "env(safe-area-inset-bottom, 8px)" }, children: _jsx("div", { className: "p-2 sm:p-4", children: _jsxs("form", { onSubmit: (e) => {
                                 e.preventDefault();
                                 submit(input);
                             }, className: "mx-auto max-w-2xl lg:max-w-3xl", children: [_jsx(Card, { className: "rounded-xl sm:rounded-2xl shadow-sm border", children: _jsxs("div", { className: "flex items-end gap-1.5 sm:gap-2 p-2 sm:p-3", children: [_jsx(Textarea, { ref: inputRef, value: input, onChange: (e) => setInput(e.target.value), placeholder: "Ask anything\u2026", rows: 1, disabled: isRunning, enterKeyHint: "send", inputMode: "text", autoCapitalize: "off", autoCorrect: "off", autoComplete: "off", className: "flex-1 min-h-[22px] sm:min-h-[24px] max-h-36 sm:max-h-48 resize-none border-0 shadow-none focus:outline-none bg-transparent px-1 text-sm leading-5 sm:leading-6 py-[3px]", onKeyDown: (e) => {
@@ -212,15 +225,32 @@ function AssistantMessageView({ msg, isLast, isRunning, agentState, isFirstUser,
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
     }, [msg.content]);
-    const reasoningSteps = useMemo(() => {
-        return agentState.planSteps
-            .filter((s) => s.status === "done")
-            .map((s) => ({ label: s.intent, description: s.detail ?? "" }));
-    }, [agentState.planSteps]);
-    // Show Reasoning only on the first assistant message of the run,
-    // and only when there's something to show (plan steps or active phase).
-    const showReasoning = isFirstUser && reasoningSteps.length > 0;
-    return (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: "AI" }), _jsxs(MessageContent, { variant: "flat", children: [showReasoning && (_jsxs(Reasoning, { isStreaming: isRunning, defaultOpen: isRunning, children: [_jsx(ReasoningTrigger, { title: `Reasoning (${reasoningSteps.length} step${reasoningSteps.length === 1 ? "" : "s"})` }), _jsx(ReasoningContent, { children: _jsx("ol", { className: "space-y-1.5 list-decimal pl-4", children: reasoningSteps.map((s, i) => (_jsxs("li", { className: "text-[11px] sm:text-xs", children: [_jsx("span", { className: "font-medium", children: s.label }), s.description && (_jsxs("span", { className: "text-muted-foreground", children: [" \u2014 ", s.description] }))] }, i))) }) })] })), msg.content && (_jsxs("div", { className: "mt-1", children: [_jsx(Response, { children: msg.content }), isRunning && (_jsx("span", { className: "inline-block w-1.5 h-3.5 bg-foreground ml-0.5 animate-pulse align-text-bottom" }))] })), !msg.content && isRunning && (_jsxs("div", { className: "flex items-center gap-2 text-muted-foreground text-xs", children: [_jsx(Loader, { size: 14 }), _jsx("span", { children: "Thinking\u2026" })] })), sources && sources.length > 0 && !isRunning && (_jsxs(Sources, { autoOpen: true, count: sources.length, children: [_jsx(SourcesTrigger, { count: sources.length }), _jsx(SourcesContent, { children: sources.map((s) => (_jsx(Source, { href: s.url, title: s.title, domain: s.domain }, s.id))) })] })), related && related.length > 0 && !isRunning && (_jsx("div", { className: "mt-3 flex flex-wrap gap-1.5", children: related.map((q, i) => (_jsxs("button", { type: "button", className: "inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors", children: [_jsx(Sparkles, { className: "h-2.5 w-2.5 text-muted-foreground" }), q] }, i))) })), isLast && !isRunning && msg.content && (_jsxs(Actions, { children: [_jsx(Action, { tooltip: copied ? "Copied" : "Copy", label: copied ? "Copied" : "Copy", icon: copied ? Check : Copy, onClick: onCopy }), _jsx(Action, { tooltip: "Good answer", label: "Good answer", icon: ThumbsUp, onClick: () => { } }), _jsx(Action, { tooltip: "Bad answer", label: "Bad answer", icon: ThumbsDown, onClick: () => { } }), _jsx(Action, { tooltip: "Regenerate", label: "Regenerate", icon: RotateCw, onClick: () => { } })] }))] })] }));
+    // Show Reasoning when running OR when there are plan steps or a plan object
+    const hasPlanContent = agentState.planSteps.length > 0 || agentState.plan != null;
+    const showReasoning = isFirstUser && (isRunning || hasPlanContent);
+    // Build a title that reflects live state
+    const runningCount = agentState.planSteps.filter((s) => s.status === "running").length;
+    const totalSteps = agentState.planSteps.length;
+    const reasoningTitle = isRunning
+        ? `Reasoning (${runningCount} running${totalSteps > 0 ? ` · ${totalSteps} total` : ""})`
+        : `Reasoning (${totalSteps} step${totalSteps === 1 ? "" : "s"})`;
+    return (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: "AI" }), _jsxs(MessageContent, { variant: "flat", children: [showReasoning && (_jsxs(Reasoning, { isStreaming: isRunning, defaultOpen: isRunning, children: [_jsx(ReasoningTrigger, { title: reasoningTitle }), _jsxs(ReasoningContent, { children: [agentState.plan && (_jsxs("div", { className: "space-y-1.5 mb-2", children: [agentState.plan.reason && (_jsx("p", { className: "text-[10px] sm:text-xs text-muted-foreground", children: agentState.plan.reason })), agentState.plan.synthesize_hint && (_jsxs("p", { className: "text-[10px] sm:text-xs text-muted-foreground italic", children: ["Style: ", agentState.plan.synthesize_hint] })), agentState.plan.sub_queries &&
+                                                Array.isArray(agentState.plan.sub_queries) &&
+                                                agentState.plan.sub_queries.length > 0 && (_jsx("div", { className: "flex flex-wrap gap-1 pt-1", children: agentState.plan.sub_queries.map((q, i) => (_jsxs("span", { className: "inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[9px] sm:text-[10px] font-medium", children: [_jsx("span", { className: "max-w-[80px] sm:max-w-[120px] truncate", children: String(q.query || q.intent || "") }), q.source && (_jsx("span", { className: "text-[8px] uppercase tracking-wider text-muted-foreground", children: String(q.source) }))] }, i))) }))] })), agentState.planSteps.length > 0 && (_jsx("div", { className: "space-y-0.5", children: agentState.planSteps.map((step, i) => (_jsxs("div", { className: "flex items-center gap-2 py-0.5 text-[10px] sm:text-xs", children: [_jsx("div", { className: [
+                                                        "w-1.5 h-1.5 rounded-full shrink-0",
+                                                        step.status === "running"
+                                                            ? "bg-primary animate-pulse"
+                                                            : step.status === "done"
+                                                                ? "bg-green-500"
+                                                                : step.status === "error"
+                                                                    ? "bg-destructive"
+                                                                    : "bg-muted-foreground",
+                                                    ].join(" ") }), _jsxs("span", { className: [
+                                                        "truncate",
+                                                        step.status === "running"
+                                                            ? "font-medium"
+                                                            : "text-muted-foreground",
+                                                    ].join(" "), children: [step.intent, step.detail ? `: ${step.detail}` : ""] }), step.status === "done" && (_jsx(Check, { className: "h-3 w-3 text-green-500 shrink-0" })), step.status === "error" && (_jsx(XCircle, { className: "h-3 w-3 text-destructive shrink-0" }))] }, step.id ?? i))) }))] })] })), msg.content && (_jsxs("div", { className: "mt-1", children: [_jsx(Response, { children: msg.content }), isRunning && (_jsx("span", { className: "inline-block w-1.5 h-3.5 bg-foreground ml-0.5 animate-pulse align-text-bottom" }))] })), !msg.content && isRunning && (_jsxs("div", { className: "flex items-center gap-2 text-muted-foreground text-xs", children: [_jsx(Loader, { size: 14 }), _jsx("span", { children: "Thinking\u2026" })] })), sources && sources.length > 0 && !isRunning && (_jsxs(Sources, { autoOpen: true, count: sources.length, children: [_jsx(SourcesTrigger, { count: sources.length }), _jsx(SourcesContent, { children: sources.map((s) => (_jsx(Source, { href: s.url, title: s.title, domain: s.domain }, s.id))) })] })), related && related.length > 0 && !isRunning && (_jsx("div", { className: "mt-3 flex flex-wrap gap-1.5", children: related.map((q, i) => (_jsxs("button", { type: "button", className: "inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors", children: [_jsx(Sparkles, { className: "h-2.5 w-2.5 text-muted-foreground" }), q] }, i))) })), isLast && !isRunning && msg.content && (_jsxs(Actions, { children: [_jsx(Action, { tooltip: copied ? "Copied" : "Copy", label: copied ? "Copied" : "Copy", icon: copied ? Check : Copy, onClick: onCopy }), _jsx(Action, { tooltip: "Good answer", label: "Good answer", icon: ThumbsUp, onClick: () => { } }), _jsx(Action, { tooltip: "Bad answer", label: "Bad answer", icon: ThumbsDown, onClick: () => { } }), _jsx(Action, { tooltip: "Regenerate", label: "Regenerate", icon: RotateCw, onClick: () => { } })] }))] })] }));
 }
 // ── Landing suggestions ─────────────────────────────────────────
 function LandingSuggestions({ focus, onFocusChange, onSubmit, }) {
@@ -247,6 +277,7 @@ export { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai
 export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-elements/reasoning";
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
+export { ErrorBanner } from "./components/ai-elements/error-banner";
 // Unified Agent hook
 export { useAgent } from "@anvil/react-headless";
 // Zero-config Agent UI

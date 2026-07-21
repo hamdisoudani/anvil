@@ -60,10 +60,16 @@ export function reduceAgentState(state, event) {
             };
         }
         // ── plan.step ────────────────────────────────────────────────
-        // A step in the agent's plan has started or completed.
+        // A step in the agent's plan has started, completed, or errored.
         // Updates existing steps (status transitions) or appends new ones.
         case "plan.step": {
-            const step = event.payload;
+            const payload = event.payload;
+            const step = {
+                id: String(payload.id ?? ""),
+                intent: payload.intent ?? "",
+                status: payload.status ?? "running",
+                detail: payload.detail,
+            };
             // Update existing step or append new one
             const existingIdx = state.planSteps.findIndex((s) => s.id === step.id);
             const planSteps = existingIdx >= 0
@@ -127,7 +133,8 @@ export function reduceAgentState(state, event) {
                 return {
                     ...state,
                     plan,
-                    currentStepIndex: plan.currentStep ?? state.currentStepIndex,
+                    // Keep currentStepIndex if the plan doesn't specify one
+                    currentStepIndex: state.currentStepIndex,
                 };
             }
             // render_sources and show_related are informational —
@@ -177,13 +184,36 @@ export function reduceAgentState(state, event) {
             };
         }
         // ── error ─────────────────────────────────────────────────────
-        // An unrecoverable error occurred.
+        // An error occurred — could be unrecoverable or recoverable.
+        // Parses structured AgentError from payload fields.
         case "error": {
-            const p = event.payload;
+            const raw = event.payload;
+            const message = (typeof raw?.message === "string" && raw.message) ||
+                (typeof raw?.err === "string" && raw.err) ||
+                (typeof raw?.error === "string" && raw.error) ||
+                "An unknown error occurred";
+            const code = typeof raw?.code === "string" ? raw.code : undefined;
+            const severity = ["info", "warning", "error", "fatal"].includes(raw?.severity)
+                ? raw.severity
+                : "error";
+            const recoverable = Boolean(raw?.recoverable);
+            const retryable = raw?.retryable === undefined ? true : Boolean(raw?.retryable);
+            const stepId = (typeof raw?.step_id === "string" && raw.step_id) ||
+                (typeof raw?.stepId === "string" && raw.stepId) ||
+                undefined;
+            // Recoverable errors keep the current phase so partial progress stays visible.
             return {
                 ...state,
-                phase: "error",
-                error: p.message ?? "An unknown error occurred",
+                phase: recoverable ? state.phase : "error",
+                error: {
+                    message,
+                    code,
+                    severity,
+                    recoverable,
+                    retryable,
+                    stepId,
+                    raw,
+                },
                 isStreaming: false,
             };
         }

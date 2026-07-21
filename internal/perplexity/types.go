@@ -33,40 +33,48 @@ type SearchTool interface {
 
 // PageContent is the result of fetch_page.
 type PageContent struct {
-	URL   string `json:"url"`
-	Title string `json:"title"`
-	Text  string `json:"text"`  // plain text, markdown stripped
+	URL   string   `json:"url"`
+	Title string   `json:"title"`
+	Text  string   `json:"text"` // plain text, markdown stripped
 	Links []string `json:"links,omitempty"`
 }
 
 // Source is a citation-ready source for the frontend.
 // The agent collects these as it searches.
 type Source struct {
-	ID    int    `json:"id"`            // 1, 2, 3, ... matches [N] in the answer
-	URL   string `json:"url"`
-	Title string `json:"title"`
+	ID     int    `json:"id"` // 1, 2, 3, ... matches [N] in the answer
+	URL    string `json:"url"`
+	Title  string `json:"title"`
 	Domain string `json:"domain"`
-	Used  bool   `json:"used"`           // marked true if the agent cited it
+	Used   bool   `json:"used"` // marked true if the agent cited it
 }
 
 // FrontendToolName is the discriminator for frontend tool calls.
 // The engine emits these as tool.call events with is_frontend=true;
 // the React SDK catches them and dispatches to the registered handler.
 const (
-	ToolRenderSources     = "render_sources"
-	ToolHighlightCitation = "highlight_citation"
-	ToolScrollToSource    = "scroll_to_source"
-	ToolShowRelated       = "show_related"
+	ToolRenderSources      = "render_sources"
+	ToolHighlightCitation  = "highlight_citation"
+	ToolScrollToSource     = "scroll_to_source"
+	ToolShowRelated        = "show_related"
 	ToolShowSearchProgress = "show_search_progress"
-	ToolShowPlanStep      = "show_plan_step"
+	ToolShowPlanStep       = "show_plan_step"
+)
+
+// Step status constants — must match PlanStep.status on the frontend.
+const (
+	StepPending string = "pending"
+	StepRunning string = "running"
+	StepDone    string = "done"
+	StepError   string = "error"
 )
 
 // PlanStep is the structured step the agent is on.
 // ThreadState.Plan is exposed in the frontend so the user can see
 // "Searching the web... Reading 4 sources... Writing answer..."
 type PlanStepInfo struct {
-	ID     int      `json:"id"`
-	Intent string   `json:"intent"`     // "search for event sourcing"
-	Status string   `json:"status"`     // pending | running | done | error
-	Detail string   `json:"detail,omitempty"`
+	ID     string `json:"id"`
+	Intent string `json:"intent"` // "search for event sourcing"
+	Status string `json:"status"` // "pending" | "running" | "done" | "error"
+	Detail string `json:"detail,omitempty"`
 }

@@ -46,6 +46,7 @@ import { Actions, Action } from "./ai-elements/actions";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Textarea } from "./ui/input";
+import { ErrorBanner } from "./ai-elements/error-banner";
 import {
   ArrowUp,
   Sparkles,
@@ -69,7 +70,7 @@ function getActivityText(state: AgentState): string {
   }
   if (state.isStreaming) return "Writing answer…";
   if (state.phase === "done") return "Done";
-  if (state.phase === "error") return state.error ?? "Error";
+  if (state.phase === "error") return state.error?.message ?? "Error";
   if (state.phase === "idle") return "";
   return state.phase;
 }
@@ -330,8 +331,20 @@ export function AgentUI({ agent, className, placeholder = "Ask anything…", ren
 
           {/* Error */}
           {agent.error && (
-            <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-              <p className="text-sm text-destructive">{agent.error}</p>
+            <div className="mt-3">
+              <ErrorBanner
+                error={{
+                  message: agent.error,
+                  severity: "error",
+                  retryable: true,
+                }}
+                onRetry={() => {
+                  const lastUser = [...agent.messages]
+                    .reverse()
+                    .find((m) => m.role === "user");
+                  if (lastUser?.content) void agent.send(lastUser.content);
+                }}
+              />
             </div>
           )}
         </div>

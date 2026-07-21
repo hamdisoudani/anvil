@@ -105,7 +105,7 @@ export function useAgent(options = {}) {
     // Derived state
     const isProcessing = session.status === "running" || session.status === "starting";
     const isDone = session.status === "done";
-    const error = session.error?.message ?? agentState.error ?? null;
+    const error = agentState.error?.message ?? session.error?.message ?? null;
     // Store session methods in refs so callbacks don't depend on session object identity
     const startRef = useRef();
     const cancelRef = useRef();

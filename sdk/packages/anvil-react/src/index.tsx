@@ -63,6 +63,7 @@ import {
 } from "./components/ai-elements/reasoning";
 import { Loader } from "./components/ai-elements/loader";
 import { Actions, Action } from "./components/ai-elements/actions";
+import { ErrorBanner } from "./components/ai-elements/error-banner";
 import { cn } from "./lib/utils";
 import {
   Search,
@@ -81,6 +82,7 @@ import {
   X,
   Trash2,
   Check,
+  XCircle,
 } from "lucide-react";
 
 // ── Config ───────────────────────────────────────────────────────
@@ -400,19 +402,27 @@ export function AnvilPerplexity({
                     </MessageContent>
                   </Message>
                 )}
-              {session.error && (
-                <div className="mt-3 rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-                  <div className="flex items-start gap-2">
-                    <X className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-destructive">
-                        Error
-                      </div>
-                      <div className="text-xs text-destructive/80 mt-1 break-words">
-                        {session.error.message}
-                      </div>
-                    </div>
-                  </div>
+              {(agentState.error || session.error) && (
+                <div className="mt-3">
+                  <ErrorBanner
+                    error={
+                      agentState.error ?? {
+                        message: session.error!.message,
+                        severity: "error" as const,
+                        retryable: true,
+                      }
+                    }
+                    onRetry={
+                      isRunning
+                        ? undefined
+                        : () => {
+                            const lastUser = [...messages]
+                              .reverse()
+                              .find((m) => m.role === "user");
+                            if (lastUser?.content) void submit(lastUser.content);
+                          }
+                    }
+                  />
                 </div>
               )}
             </ConversationContent>
@@ -563,15 +573,16 @@ function AssistantMessageView({
     setTimeout(() => setCopied(false), 1500);
   }, [msg.content]);
 
-  const reasoningSteps = useMemo(() => {
-    return agentState.planSteps
-      .filter((s) => s.status === "done")
-      .map((s) => ({ label: s.intent, description: s.detail ?? "" }));
-  }, [agentState.planSteps]);
+  // Show Reasoning when running OR when there are plan steps or a plan object
+  const hasPlanContent = agentState.planSteps.length > 0 || agentState.plan != null;
+  const showReasoning = isFirstUser && (isRunning || hasPlanContent);
 
-  // Show Reasoning only on the first assistant message of the run,
-  // and only when there's something to show (plan steps or active phase).
-  const showReasoning = isFirstUser && reasoningSteps.length > 0;
+  // Build a title that reflects live state
+  const runningCount = agentState.planSteps.filter((s) => s.status === "running").length;
+  const totalSteps = agentState.planSteps.length;
+  const reasoningTitle = isRunning
+    ? `Reasoning (${runningCount} running${totalSteps > 0 ? ` · ${totalSteps} total` : ""})`
+    : `Reasoning (${totalSteps} step${totalSteps === 1 ? "" : "s"})`;
 
   return (
     <Message from="assistant">
@@ -579,20 +590,89 @@ function AssistantMessageView({
       <MessageContent variant="flat">
         {showReasoning && (
           <Reasoning isStreaming={isRunning} defaultOpen={isRunning}>
-            <ReasoningTrigger
-              title={`Reasoning (${reasoningSteps.length} step${reasoningSteps.length === 1 ? "" : "s"})`}
-            />
+            <ReasoningTrigger title={reasoningTitle} />
             <ReasoningContent>
-              <ol className="space-y-1.5 list-decimal pl-4">
-                {reasoningSteps.map((s, i) => (
-                  <li key={i} className="text-[11px] sm:text-xs">
-                    <span className="font-medium">{s.label}</span>
-                    {s.description && (
-                      <span className="text-muted-foreground"> — {s.description}</span>
+              {/* Plan summary: reason + synthesize_hint */}
+              {agentState.plan && (
+                <div className="space-y-1.5 mb-2">
+                  {(agentState.plan as any).reason && (
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">
+                      {(agentState.plan as any).reason as string}
+                    </p>
+                  )}
+                  {(agentState.plan as any).synthesize_hint && (
+                    <p className="text-[10px] sm:text-xs text-muted-foreground italic">
+                      Style: {(agentState.plan as any).synthesize_hint as string}
+                    </p>
+                  )}
+                  {/* Sub-query badges with query + source */}
+                  {(agentState.plan as any).sub_queries &&
+                    Array.isArray((agentState.plan as any).sub_queries) &&
+                    ((agentState.plan as any).sub_queries as any[]).length > 0 && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {((agentState.plan as any).sub_queries as any[]).map(
+                          (q: any, i: number) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[9px] sm:text-[10px] font-medium"
+                            >
+                              <span className="max-w-[80px] sm:max-w-[120px] truncate">
+                                {String(q.query || q.intent || "")}
+                              </span>
+                              {q.source && (
+                                <span className="text-[8px] uppercase tracking-wider text-muted-foreground">
+                                  {String(q.source)}
+                                </span>
+                              )}
+                            </span>
+                          ),
+                        )}
+                      </div>
                     )}
-                  </li>
-                ))}
-              </ol>
+                </div>
+              )}
+
+              {/* Full live timeline of ALL planSteps with status colors */}
+              {agentState.planSteps.length > 0 && (
+                <div className="space-y-0.5">
+                  {agentState.planSteps.map((step, i) => (
+                    <div
+                      key={step.id ?? i}
+                      className="flex items-center gap-2 py-0.5 text-[10px] sm:text-xs"
+                    >
+                      <div
+                        className={[
+                          "w-1.5 h-1.5 rounded-full shrink-0",
+                          step.status === "running"
+                            ? "bg-primary animate-pulse"
+                            : step.status === "done"
+                              ? "bg-green-500"
+                              : step.status === "error"
+                                ? "bg-destructive"
+                                : "bg-muted-foreground",
+                        ].join(" ")}
+                      />
+                      <span
+                        className={[
+                          "truncate",
+                          step.status === "running"
+                            ? "font-medium"
+                            : "text-muted-foreground",
+                        ].join(" ")}
+                      >
+                        {step.intent}
+                        {step.detail ? `: ${step.detail}` : ""}
+                      </span>
+                      {step.status === "done" && (
+                        <Check className="h-3 w-3 text-green-500 shrink-0" />
+                      )}
+                      {step.status === "error" && (
+                        <XCircle className="h-3 w-3 text-destructive shrink-0" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </ReasoningContent>
           </Reasoning>
         )}
@@ -759,11 +839,12 @@ export { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai
 export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-elements/reasoning";
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
+export { ErrorBanner } from "./components/ai-elements/error-banner";
 
 
 // Unified Agent hook
 export { useAgent } from "@anvil/react-headless";
-export type { ToolHandler, UseAgentOptions, UseAgentReturn, PendingInterrupt } from "@anvil/react-headless";
+export type { ToolHandler, UseAgentOptions, UseAgentReturn, PendingInterrupt, AgentError } from "@anvil/react-headless";
 
 
 // Zero-config Agent UI

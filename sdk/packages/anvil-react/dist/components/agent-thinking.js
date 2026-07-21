@@ -15,6 +15,7 @@ import { useState } from "react";
 import { cn } from "../lib/utils";
 import { Badge } from "./ui/badge";
 import { useAgentState, } from "@anvil/react-headless";
+import { ErrorBanner } from "./ai-elements/error-banner";
 import { Search, Globe, BookOpen, Pencil, CheckCircle2, XCircle, Loader2, ChevronRight, } from "lucide-react";
 // ── Phase icons ──────────────────────────────────────────────────
 const PHASE_ICONS = {
@@ -45,7 +46,7 @@ function getActivity(state) {
     if (state.phase === "done")
         return "Done";
     if (state.phase === "error")
-        return state.error ?? "Error";
+        return state.error?.message ?? "Error";
     return PHASE_LABELS[state.phase] ?? state.phase;
 }
 export function AgentThinking({ events, defaultExpanded = false, className, compact = false, }) {
@@ -73,7 +74,7 @@ export function AgentThinking({ events, defaultExpanded = false, className, comp
                                                         ? "bg-destructive"
                                                         : "bg-muted-foreground") }), _jsxs("span", { className: cn("truncate", step.status === "running"
                                                 ? "font-medium"
-                                                : "text-muted-foreground"), children: [step.intent, step.detail ? `: ${step.detail}` : ""] }), step.status === "done" && (_jsx(CheckCircle2, { className: "h-3 w-3 text-green-500 shrink-0" }))] }, i))) }))] }))] }))] }));
+                                                : "text-muted-foreground"), children: [step.intent, step.detail ? `: ${step.detail}` : ""] }), step.status === "done" && (_jsx(CheckCircle2, { className: "h-3 w-3 text-green-500 shrink-0" }))] }, i))) }))] })), state.error && (_jsx(ErrorBanner, { error: state.error, className: "mt-2" }))] }))] }));
 }
 export function AgentThinkingInline({ events }) {
     const state = useAgentState({ sharedEvents: events });

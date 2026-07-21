@@ -18,6 +18,20 @@ import { type ReactNode } from "react";
 import { AnvilClient, type AnvilEvent, type EventType, type Subscription, type ClientConfig } from "@anvil/client";
 export type { AnvilEvent, EventType, Subscription, ClientConfig };
 /**
+ * Structured error from the agent, emitted via the 'error' event.
+ * Provides severity levels, recoverability hints, and optional
+ * raw payload for debugging.
+ */
+export type AgentError = {
+    message: string;
+    code?: string;
+    severity?: "info" | "warning" | "error" | "fatal";
+    recoverable?: boolean;
+    retryable?: boolean;
+    stepId?: string;
+    raw?: unknown;
+};
+/**
  * High-level phase of the agent's thinking loop.
  * Used by UIs to render appropriate indicators (spinners, progress bars, etc.).
  */
@@ -29,7 +43,7 @@ export type AgentPhase = "idle" | "planning" | "searching" | "reading" | "writin
 export interface PlanStep {
     id: string;
     intent: string;
-    status: "running" | "done";
+    status: "pending" | "running" | "done" | "error";
     detail?: string;
 }
 /**
@@ -42,11 +56,25 @@ export interface AgentSource {
     domain: string;
 }
 /**
+ * A decomposed sub-query within the agent's search plan.
+ */
+export interface PlanSubQuery {
+    id: string;
+    intent: string;
+    query: string;
+    source?: string;
+    year?: number;
+    fetch_top?: number;
+    depends_on?: string[];
+}
+/**
  * The plan object delivered via the show_plan_step frontend call.
  */
 export interface AgentPlan {
-    steps: PlanStep[];
-    currentStep: number;
+    reason?: string;
+    needs_search?: boolean;
+    synthesize_hint?: string;
+    sub_queries?: PlanSubQuery[];
     [key: string]: unknown;
 }
 /**
@@ -76,8 +104,8 @@ export interface AgentState {
     currentAnswer: string;
     /** Whether the agent is actively streaming an answer. */
     isStreaming: boolean;
-    /** Error message, if the agent encountered an unrecoverable error. */
-    error: string | null;
+    /** Structured error info, if the agent encountered an error. */
+    error: AgentError | null;
     /** Whether the terminal 'done' event has been received. */
     doneReceived: boolean;
 }

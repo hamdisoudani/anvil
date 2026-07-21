@@ -18,6 +18,7 @@ import {
   useAgentState,
 } from "@anvil/react-headless";
 import type { AnvilEvent } from "@anvil/client";
+import { ErrorBanner } from "./ai-elements/error-banner";
 import {
   Search,
   Globe,
@@ -58,7 +59,7 @@ function getActivity(state: AgentState): string {
   }
   if (state.isStreaming) return "Writing answer…";
   if (state.phase === "done") return "Done";
-  if (state.phase === "error") return state.error ?? "Error";
+  if (state.phase === "error") return state.error?.message ?? "Error";
   return PHASE_LABELS[state.phase] ?? state.phase;
 }
 
@@ -260,6 +261,14 @@ export function AgentThinking({
                 </div>
               )}
             </div>
+          )}
+
+          {/* Error banner when phase is error */}
+          {state.error && (
+            <ErrorBanner
+              error={state.error}
+              className="mt-2"
+            />
           )}
         </div>
       )}
