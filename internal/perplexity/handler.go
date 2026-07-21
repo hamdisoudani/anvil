@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -147,22 +149,49 @@ func (b *StreamingBus) Publish(sessionID string, e Event) {
 type Handler struct {
 	Orchestrator *Orchestrator
 	Bus          *StreamingBus
+
+	// Session cancel map: sessionID -> cancel func for in-flight runs.
+	cancelMu sync.Mutex
+	cancels  map[string]context.CancelFunc
+
+	// Thread message memory (server-side multi-turn).
+	threadMu   sync.RWMutex
+	threadMsgs map[string][]Message // threadID -> conversation turns
+
+	// Rate limiting (token bucket per IP, simple).
+	rateMu   sync.Mutex
+	rateHits map[string][]time.Time
+
+	// CORS allowlist; empty = reflect request Origin (dev). Set ANVIL_CORS_ORIGINS.
+	allowedOrigins map[string]struct{}
 }
 
 func NewHandler(orch *Orchestrator) *Handler {
-	return &Handler{Orchestrator: orch, Bus: NewStreamingBus()}
+	h := &Handler{
+		Orchestrator:   orch,
+		Bus:            NewStreamingBus(),
+		cancels:        make(map[string]context.CancelFunc),
+		threadMsgs:     make(map[string][]Message),
+		rateHits:       make(map[string][]time.Time),
+		allowedOrigins: parseAllowedOrigins(os.Getenv("ANVIL_CORS_ORIGINS")),
+	}
+	return h
+}
+
+func parseAllowedOrigins(raw string) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, o := range strings.Split(raw, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			out[o] = struct{}{}
+		}
+	}
+	return out
 }
 
 // ServeHTTP dispatches.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// CORS — allow any Vercel preview + custom domain. Tighten in prod.
-	origin := r.Header.Get("Origin")
-	if origin != "" {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-	}
+	h.applyCORS(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -177,14 +206,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/perplexity/stream/"):
 		h.handleStream(w, r)
 	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/events"):
-		// Compatibility shim: /sessions/:id/events → /perplexity/stream/:id
-		// Extract the session ID FIRST, then construct the new path.
 		sid := strings.TrimPrefix(path, "/sessions/")
 		sid = strings.TrimSuffix(sid, "/events")
-		newPath := "/perplexity/stream/" + sid
 		r2 := r.Clone(r.Context())
-		r2.URL.Path = newPath
+		r2.URL.Path = "/perplexity/stream/" + sid
 		h.handleStream(w, r2)
+	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/cancel") && r.Method == "POST":
+		sid := strings.TrimPrefix(path, "/sessions/")
+		sid = strings.TrimSuffix(sid, "/cancel")
+		h.handleCancel(w, r, sid)
+	case strings.HasPrefix(path, "/perplexity/cancel/") && r.Method == "POST":
+		sid := strings.TrimPrefix(path, "/perplexity/cancel/")
+		h.handleCancel(w, r, sid)
+	case strings.HasPrefix(path, "/perplexity/thread/") && r.Method == "GET":
+		tid := strings.TrimPrefix(path, "/perplexity/thread/")
+		h.handleThread(w, r, tid)
 	case path == "/healthz":
 		w.WriteHeader(200)
 		fmt.Fprintln(w, "ok")
@@ -201,12 +237,78 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleAsk starts a new search session.
+func (h *Handler) applyCORS(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return
+	}
+	allow := ""
+	if len(h.allowedOrigins) == 0 {
+		// Dev default: reflect origin (local + preview deploys).
+		allow = origin
+	} else if _, ok := h.allowedOrigins[origin]; ok {
+		allow = origin
+	} else if _, ok := h.allowedOrigins["*"]; ok {
+		allow = "*"
+	}
+	if allow == "" {
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", allow)
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID")
+	if allow != "*" {
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+	}
+	w.Header().Set("Vary", "Origin")
+}
+
+// rateLimit: max 30 asks / minute / IP.
+func (h *Handler) rateLimit(ip string) bool {
+	const maxHits = 30
+	const window = time.Minute
+	now := time.Now()
+	h.rateMu.Lock()
+	defer h.rateMu.Unlock()
+	hits := h.rateHits[ip]
+	// drop old
+	kept := hits[:0]
+	for _, t := range hits {
+		if now.Sub(t) < window {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= maxHits {
+		h.rateHits[ip] = kept
+		return false
+	}
+	h.rateHits[ip] = append(kept, now)
+	return true
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// handleAsk starts a new search session (optionally continuing a thread).
 func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
+	if !h.rateLimit(clientIP(r)) {
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
 	var req struct {
 		Question string `json:"question,omitempty"`
 		Task     string `json:"task,omitempty"`
 		ThreadID string `json:"thread_id,omitempty"`
+		Focus    string `json:"focus,omitempty"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -227,10 +329,15 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := uuidNew()
 	h.Bus.AddSessionToThread(threadID, sessionID)
-	// Detach from the HTTP request context: handleAsk returns immediately
-	// after writing JSON, so r.Context() is cancelled right after. Search
-	// must outlive the request. Still honour process shutdown via Background.
-	go h.runSearch(context.Background(), sessionID, threadID, question)
+
+	// Cancellable context for Stop button / cancel endpoint.
+	ctx, cancel := context.WithCancel(context.Background())
+	h.cancelMu.Lock()
+	h.cancels[sessionID] = cancel
+	h.cancelMu.Unlock()
+
+	history := h.threadHistory(threadID)
+	go h.runSearch(ctx, sessionID, threadID, question, req.Focus, history)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -240,25 +347,107 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request, sessionID string) {
+	if sessionID == "" {
+		http.Error(w, "session_id required", http.StatusBadRequest)
+		return
+	}
+	h.cancelMu.Lock()
+	cancel, ok := h.cancels[sessionID]
+	if ok {
+		delete(h.cancels, sessionID)
+	}
+	h.cancelMu.Unlock()
+	if ok && cancel != nil {
+		cancel()
+		h.Bus.Publish(sessionID, Event{
+			Type:    EventError,
+			Payload: map[string]interface{}{"message": "cancelled by user", "code": "cancelled", "severity": "info", "recoverable": true, "retryable": true},
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cancelled": ok})
+}
+
+func (h *Handler) handleThread(w http.ResponseWriter, r *http.Request, threadID string) {
+	if threadID == "" {
+		http.Error(w, "thread_id required", http.StatusBadRequest)
+		return
+	}
+	sessions := h.Bus.ThreadSessions(threadID)
+	msgs := h.threadHistory(threadID)
+	// Build lightweight message DTOs for the client
+	outMsgs := make([]map[string]string, 0, len(msgs))
+	for _, m := range msgs {
+		outMsgs = append(outMsgs, map[string]string{"role": m.Role, "content": m.Content})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"thread_id":   threadID,
+		"session_ids": sessions,
+		"messages":    outMsgs,
+	})
+}
+
+func (h *Handler) threadHistory(threadID string) []Message {
+	h.threadMu.RLock()
+	defer h.threadMu.RUnlock()
+	src := h.threadMsgs[threadID]
+	out := make([]Message, len(src))
+	copy(out, src)
+	return out
+}
+
+func (h *Handler) appendThreadTurn(threadID, question, answer string) {
+	h.threadMu.Lock()
+	defer h.threadMu.Unlock()
+	h.threadMsgs[threadID] = append(h.threadMsgs[threadID],
+		Message{Role: "user", Content: question},
+		Message{Role: "assistant", Content: answer},
+	)
+	// Cap thread memory
+	const maxTurns = 40 // 20 pairs
+	if len(h.threadMsgs[threadID]) > maxTurns {
+		h.threadMsgs[threadID] = h.threadMsgs[threadID][len(h.threadMsgs[threadID])-maxTurns:]
+	}
+}
+
 // runSearch runs the orchestrator and publishes events to the bus.
-func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question string) {
+func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, focus string, history []Message) {
+	defer func() {
+		h.cancelMu.Lock()
+		delete(h.cancels, sessionID)
+		h.cancelMu.Unlock()
+	}()
+
 	// Emit a session.start event so the React SDK can render the user message
 	h.Bus.Publish(sessionID, Event{
 		Type: "session.start",
 		Payload: map[string]interface{}{
 			"task":      question,
 			"thread_id": threadID,
+			"focus":     focus,
 		},
 	})
 
 	result, err := h.Orchestrator.Run(ctx, question, func(e Event) {
 		h.Bus.Publish(sessionID, e)
-	})
+	}, RunOpts{History: history, Focus: focus})
 	if err != nil {
+		if ctx.Err() != nil {
+			log.Printf("session %s: cancelled", sessionID)
+			h.Bus.Publish(sessionID, Event{Type: EventError, Payload: map[string]interface{}{
+				"message": "cancelled", "code": "cancelled", "severity": "info", "retryable": true, "recoverable": true,
+			}})
+			return
+		}
 		log.Printf("session %s: error: %v", sessionID, err)
 		h.Bus.Publish(sessionID, Event{Type: EventError, Payload: map[string]interface{}{"message": err.Error()}})
 		return
 	}
+	// Persist multi-turn memory
+	h.appendThreadTurn(threadID, question, result.Answer)
+
 	log.Printf("session %s (thread %s): done (answer=%d chars, sources=%d, related=%d)",
 		sessionID, threadID, len(result.Answer), len(result.Sources), len(result.Related))
 	h.Bus.Publish(sessionID, Event{Type: EventDone, Payload: map[string]interface{}{
@@ -272,11 +461,7 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question s
 }
 
 // handleStream subscribes to the orchestrator's events for a session.
-// Supports ?since=N parameter and Last-Event-ID header:
-// both tell us which events the client already saw so we skip replay.
-// After done/error the stream stays open — the client close is the
-// signal to tear down. This prevents EventSource auto-reconnect
-// from re-receiving the full replay buffer.
+// Supports ?since=N parameter and Last-Event-ID header.
 func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := strings.TrimPrefix(r.URL.Path, "/perplexity/stream/")
 	if sessionID == "" {
@@ -293,8 +478,6 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine how many events to skip (events the client already saw).
-	// Priority: ?since=N query param > Last-Event-ID header.
 	skipCount := 0
 	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
 		fmt.Sscanf(sinceStr, "%d", &skipCount)
@@ -321,21 +504,12 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			eventID++
-
-			// Skip replayed events the client already saw
 			if eventID <= skipCount {
 				continue
 			}
-
 			data, _ := json.Marshal(e)
 			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", eventID, e.Type, data)
 			flusher.Flush()
-
-			// Do NOT close on done/error. Keep the stream open.
-			// The browser's EventSource will auto-reconnect if we close,
-			// causing a full replay-buffer re-send. Instead, let the
-			// client disconnect naturally (tab close, navigate away).
-			// The server still tears down when r.Context().Done() fires.
 		case <-ticker.C:
 			fmt.Fprint(w, ": keepalive\n\n")
 			flusher.Flush()

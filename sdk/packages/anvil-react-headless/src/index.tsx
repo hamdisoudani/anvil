@@ -602,11 +602,11 @@ export interface UseSessionResult {
    */
   start: (
     task: string,
-    opts?: { threadId?: string },
+    opts?: { threadId?: string; focus?: string },
   ) => Promise<{ sessionId: string; threadId: string }>;
   /** Resume a paused session. */
   resume: (sessionId: string) => Promise<string>;
-  /** Cancel the current session (close the subscription). */
+  /** Cancel the current session (server-side stop + close subscription). */
   cancel: () => void;
   /** Number of events received. */
   eventCount: number;
@@ -718,7 +718,7 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
 
   const start = useCallback(async (
     task: string,
-    opts?: { threadId?: string },
+    opts?: { threadId?: string; focus?: string },
   ) => {
     setStatus("starting");
     setError(null);
@@ -756,12 +756,16 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
   }, [client, subscribe]);
 
   const cancel = useCallback(() => {
+    const id = sessionRef.current ?? sessionId;
+    if (id) {
+      void client.cancelSession(id);
+    }
     subRef.current?.unsubscribe();
     subRef.current = null;
     sessionRef.current = null;
     setSessionId(null);
     setStatus("idle");
-  }, []);
+  }, [client, sessionId]);
 
   return { sessionId, status, error, start, resume, cancel, eventCount, lastEventId };
 }

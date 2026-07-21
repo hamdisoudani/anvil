@@ -24,7 +24,7 @@ import { AgentThinking } from "./agent-thinking";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Textarea } from "./ui/input";
-import { ArrowUp, Plus, Copy, Check, RotateCw, Sparkles, } from "lucide-react";
+import { ArrowUp, Square, Plus, Copy, Check, RotateCw, Sparkles, } from "lucide-react";
 // ── Component ────────────────────────────────────────────────────
 export function ChatUI({ agent, className, placeholder = "Ask anything…", title = "Anvil", onNewThread, headerRight, emptyTitle = "What do you want to know?", emptyDescription = "Ask a question — I'll search, read sources, and answer with citations.", }) {
     const [input, setInput] = React.useState("");
@@ -85,7 +85,9 @@ export function ChatUI({ agent, className, placeholder = "Ask anything…", titl
                                                     e.preventDefault();
                                                     void submit();
                                                 }
-                                            } }), _jsx(Button, { type: "submit", size: "icon", disabled: !input.trim() || agent.isProcessing, className: "h-11 w-11 sm:h-10 sm:w-10 rounded-full shrink-0 active:scale-95 transition-transform", "aria-label": "Send", children: _jsx(ArrowUp, { className: "h-5 w-5" }) })] }) }), _jsx("p", { className: "mt-2 text-center text-[10px] text-muted-foreground px-2", children: "Anvil can make mistakes. Verify important info." })] }) }) })] }));
+                                            } }), _jsx(Button, { type: agent.isProcessing ? "button" : "submit", size: "icon", variant: agent.isProcessing ? "destructive" : "default", disabled: !agent.isProcessing && !input.trim(), onClick: agent.isProcessing
+                                                ? () => agent.cancel()
+                                                : undefined, className: "h-11 w-11 sm:h-10 sm:w-10 rounded-full shrink-0 active:scale-95 transition-transform", "aria-label": agent.isProcessing ? "Stop" : "Send", children: agent.isProcessing ? (_jsx(Square, { className: "h-4 w-4 fill-current" })) : (_jsx(ArrowUp, { className: "h-5 w-5" })) })] }) }), _jsx("p", { className: "mt-2 text-center text-[10px] text-muted-foreground px-2", children: "Anvil can make mistakes. Verify important info." })] }) }) })] }));
 }
 // ── Message row ──────────────────────────────────────────────────
 function ChatMessageRow({ msg, isLast, isProcessing, agent, showThinking, copiedId, onCopy, onRetry, }) {

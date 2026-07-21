@@ -98,6 +98,7 @@ export interface UseAgentReturn {
      */
     send: (text: string, opts?: {
         threadId?: string;
+        focus?: string;
     }) => Promise<{
         sessionId: string;
         threadId: string;

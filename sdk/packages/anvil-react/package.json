@@ -12,7 +12,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "echo 'no tests yet' && exit 0",
@@ -30,11 +32,13 @@
     "@radix-ui/react-tooltip": "^1.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
-    "tailwind-merge": "^2.3.0",
+    "dompurify": "^3.4.12",
     "lucide-react": "^0.395.0",
-    "marked": "^18.0.6"
+    "marked": "^18.0.6",
+    "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.2.0",
     "@types/react": "^18.2.0",
     "autoprefixer": "^10.4.19",
     "postcss": "^8.4.38",

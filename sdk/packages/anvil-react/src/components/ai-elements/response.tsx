@@ -12,6 +12,7 @@
  */
 import * as React from "react";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
 import { cn } from "../../lib/utils";
 
 interface ResponseProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -26,56 +27,17 @@ marked.setOptions({
 });
 
 /**
- * Render markdown to safe HTML.
- *
- * - Replaces `javascript:` URLs in links
- * - Strips raw <script>/<style> blocks (defense in depth)
- * - Strips most HTML attributes except `href`, `target`, `rel`, `class`
+ * Render markdown to safe HTML via marked + DOMPurify.
  */
 function renderMarkdown(text: string): string {
   if (!text) return "";
   const raw = marked.parse(text, { async: false }) as string;
-  return sanitize(raw);
-}
-
-const ALLOWED_TAGS = new Set([
-  "p", "br", "hr",
-  "strong", "em", "b", "i", "u", "s", "del", "ins", "mark", "sub", "sup",
-  "h1", "h2", "h3", "h4", "h5", "h6",
-  "ul", "ol", "li",
-  "blockquote",
-  "code", "pre", "kbd", "samp",
-  "a",
-  "table", "thead", "tbody", "tr", "th", "td",
-  "img",
-  "span", "div",
-]);
-
-const ALLOWED_ATTRS = new Set(["href", "target", "rel", "class", "title", "alt", "src"]);
-
-// Minimal HTML sanitizer — strips tags not in the allowlist and
-// any on* event handlers. Not a full DOMPurify replacement, but
-// sufficient for the AI-generated content we render.
-function sanitize(html: string): string {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
-    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "")
-    .replace(/\son\w+="[^"]*"/gi, "")
-    .replace(/\son\w+='[^']*'/gi, "")
-    .replace(/javascript:/gi, "")
-    .replace(/<(\/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>/g, (_, slash, tag, attrs) => {
-      const lower = tag.toLowerCase();
-      if (!ALLOWED_TAGS.has(lower)) return "";
-      if (slash) return `</${lower}>`;
-      const cleanAttrs = attrs.replace(/([a-zA-Z\-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g, (m: string, name: string, v1?: string, v2?: string) => {
-        const n = name.toLowerCase();
-        if (!ALLOWED_ATTRS.has(n)) return "";
-        const v = (v1 ?? v2 ?? "").replace(/"/g, "&quot;");
-        return `${n}="${v}"`;
-      });
-      return `<${lower}${cleanAttrs}>`;
-    });
+  return DOMPurify.sanitize(raw, {
+    USE_PROFILES: { html: true },
+    FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form"],
+    FORBID_ATTR: ["onerror", "onload", "onclick", "onmouseover"],
+    ALLOW_DATA_ATTR: false,
+  });
 }
 
 export function Response({ children, className, ...props }: ResponseProps) {

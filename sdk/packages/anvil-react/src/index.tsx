@@ -68,6 +68,7 @@ import { cn } from "./lib/utils";
 import {
   Search,
   ArrowUp,
+  Square,
   Sparkles,
   Globe,
   GraduationCap,
@@ -282,10 +283,10 @@ export function AnvilPerplexity({
       // CRITICAL: do NOT clear sharedEvents on follow-ups — that was
       // wiping multi-turn history and forcing a brand-new "thread".
       try {
-        const result = await session.start(
-          text,
-          threadIdRef.current ? { threadId: threadIdRef.current } : undefined,
-        );
+        const result = await session.start(text, {
+          ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
+          ...(focus ? { focus } : {}),
+        });
         const tid = result.threadId;
         setThreadId(tid);
         threadIdRef.current = tid;
@@ -294,8 +295,12 @@ export function AnvilPerplexity({
         console.error("Failed to start session:", err);
       }
     },
-    [session],
+    [session, focus],
   );
+
+  const stop = useCallback(() => {
+    session.cancel();
+  }, [session]);
 
   const newThread = useCallback(() => {
     navigateToHome();
@@ -443,6 +448,7 @@ export function AnvilPerplexity({
                   isRunning={isRunning}
                   agentState={agentState}
                   isFirstUser={isFirstUserAfterAssistant(messages, i)}
+                  onFollowUp={submit}
                 />
               ))}
               {isRunning &&
@@ -529,16 +535,29 @@ export function AnvilPerplexity({
                     </div>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button
-                          type="submit"
-                          size="icon"
-                          disabled={!input.trim() || isRunning}
-                          className="h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform"
-                        >
-                          <ArrowUp className="h-4 sm:h-[18px] w-4 sm:w-[18px]" />
-                        </Button>
+                        {isRunning ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="destructive"
+                            onClick={stop}
+                            className="h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform"
+                            aria-label="Stop"
+                          >
+                            <Square className="h-3.5 w-3.5 fill-current" />
+                          </Button>
+                        ) : (
+                          <Button
+                            type="submit"
+                            size="icon"
+                            disabled={!input.trim()}
+                            className="h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform"
+                          >
+                            <ArrowUp className="h-4 sm:h-[18px] w-4 sm:w-[18px]" />
+                          </Button>
+                        )}
                       </TooltipTrigger>
-                      <TooltipContent>Send</TooltipContent>
+                      <TooltipContent>{isRunning ? "Stop" : "Send"}</TooltipContent>
                     </Tooltip>
                   </div>
                 </div>
@@ -571,12 +590,14 @@ function MessageView({
   isRunning,
   agentState,
   isFirstUser,
+  onFollowUp,
 }: {
   msg: ChatMessage;
   isLast: boolean;
   isRunning: boolean;
   agentState: ReturnType<typeof useAgentState>;
   isFirstUser: boolean;
+  onFollowUp?: (text: string) => void;
 }) {
   if (msg.role === "user") {
     return (
@@ -596,6 +617,7 @@ function MessageView({
       isRunning={isRunning}
       agentState={agentState}
       isFirstUser={isFirstUser}
+      onFollowUp={onFollowUp}
     />
   );
 }
@@ -606,12 +628,14 @@ function AssistantMessageView({
   isRunning,
   agentState,
   isFirstUser,
+  onFollowUp,
 }: {
   msg: ChatMessage;
   isLast: boolean;
   isRunning: boolean;
   agentState: ReturnType<typeof useAgentState>;
   isFirstUser: boolean;
+  onFollowUp?: (text: string) => void;
 }) {
   const sources = (msg as any).sources as Array<{
     id: number;
@@ -767,9 +791,10 @@ function AssistantMessageView({
               <button
                 key={i}
                 type="button"
-                className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors"
+                onClick={() => onFollowUp?.(q)}
+                className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors text-left"
               >
-                <Sparkles className="h-2.5 w-2.5 text-muted-foreground" />
+                <Sparkles className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
                 {q}
               </button>
             ))}

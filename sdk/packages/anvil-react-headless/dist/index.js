@@ -457,12 +457,16 @@ export function useSession(opts = {}) {
         }
     }, [client, subscribe]);
     const cancel = useCallback(() => {
+        const id = sessionRef.current ?? sessionId;
+        if (id) {
+            void client.cancelSession(id);
+        }
         subRef.current?.unsubscribe();
         subRef.current = null;
         sessionRef.current = null;
         setSessionId(null);
         setStatus("idle");
-    }, []);
+    }, [client, sessionId]);
     return { sessionId, status, error, start, resume, cancel, eventCount, lastEventId };
 }
 // ── useEvents: typed event log for a session ─────────────────────

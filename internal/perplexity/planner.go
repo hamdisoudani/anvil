@@ -40,22 +40,22 @@ type SearchPlan struct {
 
 // SubQuery is one search task within a plan.
 type SubQuery struct {
-	ID     string   `json:"id"`
-	Intent string   `json:"intent"`     // "what is event sourcing"
-	Query  string   `json:"query"`      // "what is event sourcing pattern 2025"
-	Source SourceKind `json:"source"`   // web | academic | news | reddit | youtube
-	Year   int      `json:"year,omitempty"` // prefer results from this year
-	FetchTop int    `json:"fetch_top"`  // how many pages to actually read (default 2)
-	DependsOn []string `json:"depends_on,omitempty"` // IDs that must complete first
+	ID        string     `json:"id"`
+	Intent    string     `json:"intent"`               // "what is event sourcing"
+	Query     string     `json:"query"`                // "what is event sourcing pattern 2025"
+	Source    SourceKind `json:"source"`               // web | academic | news | reddit | youtube
+	Year      int        `json:"year,omitempty"`       // prefer results from this year
+	FetchTop  int        `json:"fetch_top"`            // how many pages to actually read (default 2)
+	DependsOn []string   `json:"depends_on,omitempty"` // IDs that must complete first
 }
 
 // SourceKind is where to search.
 type SourceKind string
 
 const (
-	SourceWeb     SourceKind = "web"
+	SourceWeb      SourceKind = "web"
 	SourceAcademic SourceKind = "academic"
-	SourceNews    SourceKind = "news"
-	SourceReddit  SourceKind = "reddit"
-	SourceYouTube SourceKind = "youtube"
+	SourceNews     SourceKind = "news"
+	SourceReddit   SourceKind = "reddit"
+	SourceYouTube  SourceKind = "youtube"
 )

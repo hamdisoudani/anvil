@@ -43,6 +43,7 @@ import { Card } from "./ui/card";
 import { Textarea } from "./ui/input";
 import {
   ArrowUp,
+  Square,
   Plus,
   Copy,
   Check,
@@ -263,13 +264,23 @@ export function ChatUI({
                   }}
                 />
                 <Button
-                  type="submit"
+                  type={agent.isProcessing ? "button" : "submit"}
                   size="icon"
-                  disabled={!input.trim() || agent.isProcessing}
+                  variant={agent.isProcessing ? "destructive" : "default"}
+                  disabled={!agent.isProcessing && !input.trim()}
+                  onClick={
+                    agent.isProcessing
+                      ? () => agent.cancel()
+                      : undefined
+                  }
                   className="h-11 w-11 sm:h-10 sm:w-10 rounded-full shrink-0 active:scale-95 transition-transform"
-                  aria-label="Send"
+                  aria-label={agent.isProcessing ? "Stop" : "Send"}
                 >
-                  <ArrowUp className="h-5 w-5" />
+                  {agent.isProcessing ? (
+                    <Square className="h-4 w-4 fill-current" />
+                  ) : (
+                    <ArrowUp className="h-5 w-5" />
+                  )}
                 </Button>
               </div>
             </Card>

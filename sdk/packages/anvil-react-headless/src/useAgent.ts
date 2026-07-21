@@ -118,7 +118,7 @@ export interface UseAgentReturn {
    */
   send: (
     text: string,
-    opts?: { threadId?: string },
+    opts?: { threadId?: string; focus?: string },
   ) => Promise<{ sessionId: string; threadId: string } | void>;
   /** Cancel the current agent run */
   cancel: () => void;
@@ -239,7 +239,7 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   const startRef = useRef<
     (
       task: string,
-      opts?: { threadId?: string },
+      opts?: { threadId?: string; focus?: string },
     ) => Promise<{ sessionId: string; threadId: string }>
   >();
   const cancelRef = useRef<() => void>();
@@ -259,7 +259,7 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   const send = useCallback(
     async (
       text: string,
-      opts?: { threadId?: string },
+      opts?: { threadId?: string; focus?: string },
     ): Promise<{ sessionId: string; threadId: string } | void> => {
       if (!text.trim()) return;
       const tid = opts?.threadId ?? threadIdRef.current ?? undefined;
@@ -269,7 +269,10 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
       setPendingInterrupt(null);
       pendingInterruptRef.current = null;
       try {
-        const result = await startRef.current?.(text, tid ? { threadId: tid } : undefined);
+        const result = await startRef.current?.(text, {
+          ...(tid ? { threadId: tid } : {}),
+          ...(opts?.focus ? { focus: opts.focus } : {}),
+        });
         if (result) {
           threadIdRef.current = result.threadId;
           setThreadId(result.threadId);

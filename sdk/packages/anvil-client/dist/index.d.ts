@@ -71,6 +71,7 @@ export declare class AnvilClient {
      */
     startTask(task: string, opts?: {
         threadId?: string;
+        focus?: string;
     }): Promise<{
         sessionId: string;
         threadId: string;
@@ -88,6 +89,17 @@ export declare class AnvilClient {
      * Called by the browser-side executor when it finishes a FrontendTool.
      */
     deliverToolResult(sessionId: string, callId: string, result: unknown, error?: string): Promise<void>;
+    /** Cancel an in-flight session (Stop button). Server cancels the search goroutine. */
+    cancelSession(sessionId: string): Promise<void>;
+    /** Load server-side thread memory (messages + session ids). */
+    getThread(threadId: string): Promise<{
+        thread_id: string;
+        session_ids: string[];
+        messages: Array<{
+            role: string;
+            content: string;
+        }>;
+    }>;
     /**
      * Subscribe to events for a session. Returns a Subscription handle.
      *

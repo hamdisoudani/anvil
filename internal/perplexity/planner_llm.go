@@ -13,11 +13,36 @@ import (
 // Returns a SearchPlan with the decomposed sub-queries.
 //
 // This is one LLM call. It must be fast (Haiku, ~500ms).
-func (o *Orchestrator) PlanSearch(ctx context.Context, question string) (*SearchPlan, error) {
+func (o *Orchestrator) PlanSearch(ctx context.Context, question string, opts RunOpts) (*SearchPlan, error) {
 	currentYear := time.Now().Year()
+	focusHint := ""
+	if opts.Focus != "" {
+		focusHint = fmt.Sprintf("\nPreferred source focus: %s — bias sub_queries.source toward this when relevant.", opts.Focus)
+	}
+	historyHint := ""
+	if len(opts.History) > 0 {
+		var hb strings.Builder
+		hb.WriteString("\n\nPrior conversation (use for context; do not re-search facts already answered unless user asks for updates):\n")
+		start := 0
+		if len(opts.History) > 8 {
+			start = len(opts.History) - 8
+		}
+		for _, m := range opts.History[start:] {
+			hb.WriteString(m.Role)
+			hb.WriteString(": ")
+			// Truncate long turns
+			c := m.Content
+			if len(c) > 400 {
+				c = c[:400] + "…"
+			}
+			hb.WriteString(c)
+			hb.WriteString("\n")
+		}
+		historyHint = hb.String()
+	}
 	prompt := fmt.Sprintf(`You are a research planner. Given a user's question, decide if it needs web search and how to decompose it.
 
-Current year: %d
+Current year: %d%s%s
 
 Return a JSON object with this schema:
 {
@@ -38,14 +63,15 @@ Return a JSON object with this schema:
 }
 
 Rules:
-- needs_search=false ONLY for pure generation (write a poem, code from scratch, explain a concept I gave you).
+- needs_search=false ONLY for pure generation (write a poem, code from scratch, explain a concept I gave you) OR when prior conversation already fully answers and user is just refining style.
 - For factual questions about the world, current events, or specific products, needs_search=true.
 - Decompose complex questions into 2-4 independent sub-queries.
 - Each sub-query should be specific and add a year qualifier for time-sensitive topics.
 - Mark queries as dependent only if the answer to one truly requires the other.
 - For "compare X vs Y", use TWO sub-queries: one for X, one for Y, then a third that synthesizes.
+- If this is a follow-up, bias queries toward what is NEW relative to prior turns.
 
-Output ONLY the JSON. No prose.`, currentYear)
+Output ONLY the JSON. No prose.`, currentYear, focusHint, historyHint)
 
 	req := LLMRequest{
 		SystemPrompt: prompt,

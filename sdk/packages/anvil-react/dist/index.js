@@ -29,7 +29,7 @@ import { Loader } from "./components/ai-elements/loader";
 import { Actions, Action } from "./components/ai-elements/actions";
 import { ErrorBanner } from "./components/ai-elements/error-banner";
 import { cn } from "./lib/utils";
-import { Search, ArrowUp, Sparkles, Globe, GraduationCap, Newspaper, MessageCircle, Copy, ThumbsUp, ThumbsDown, RotateCw, Plus, History, X, Trash2, Check, XCircle, } from "lucide-react";
+import { Search, ArrowUp, Square, Sparkles, Globe, GraduationCap, Newspaper, MessageCircle, Copy, ThumbsUp, ThumbsDown, RotateCw, Plus, History, X, Trash2, Check, XCircle, } from "lucide-react";
 // ── Config ───────────────────────────────────────────────────────
 const FOCUS_MODES = [
     { id: "web", label: "Web", icon: Globe },
@@ -183,7 +183,10 @@ export function AnvilPerplexity({ className, defaultFocus = "web", }) {
         // CRITICAL: do NOT clear sharedEvents on follow-ups — that was
         // wiping multi-turn history and forcing a brand-new "thread".
         try {
-            const result = await session.start(text, threadIdRef.current ? { threadId: threadIdRef.current } : undefined);
+            const result = await session.start(text, {
+                ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
+                ...(focus ? { focus } : {}),
+            });
             const tid = result.threadId;
             setThreadId(tid);
             threadIdRef.current = tid;
@@ -192,6 +195,9 @@ export function AnvilPerplexity({ className, defaultFocus = "web", }) {
         catch (err) {
             console.error("Failed to start session:", err);
         }
+    }, [session, focus]);
+    const stop = useCallback(() => {
+        session.cancel();
     }, [session]);
     const newThread = useCallback(() => {
         navigateToHome();
@@ -221,7 +227,7 @@ export function AnvilPerplexity({ className, defaultFocus = "web", }) {
                                         }, children: [_jsx("span", { className: "line-clamp-1", children: t.title }), _jsx("span", { className: "text-[9px] text-muted-foreground", children: new Date(t.timestamp).toLocaleDateString() })] }), _jsx("button", { type: "button", className: "opacity-0 group-hover:opacity-100 h-5 w-5 text-muted-foreground hover:text-destructive", onClick: () => {
                                             deleteThread(t.id);
                                             setThreads(loadThreads());
-                                        }, children: _jsx(Trash2, { className: "h-3 w-3" }) })] }, t.id))))] }) })), _jsx(Conversation, { children: showLanding ? (_jsxs(ConversationContent, { children: [_jsx(ConversationEmptyState, { title: "Where knowledge begins", description: "Ask anything. Anvil searches the web, reads the top sources, and writes a cited answer.", icon: _jsx(Sparkles, { className: "h-6 w-6" }) }), _jsx(LandingSuggestions, { focus: focus, onFocusChange: setFocus, onSubmit: submit })] })) : (_jsxs(ConversationContent, { children: [messages.map((m, i) => (_jsx(MessageView, { msg: m, isLast: i === messages.length - 1, isRunning: isRunning, agentState: agentState, isFirstUser: isFirstUserAfterAssistant(messages, i) }, m.id))), isRunning &&
+                                        }, children: _jsx(Trash2, { className: "h-3 w-3" }) })] }, t.id))))] }) })), _jsx(Conversation, { children: showLanding ? (_jsxs(ConversationContent, { children: [_jsx(ConversationEmptyState, { title: "Where knowledge begins", description: "Ask anything. Anvil searches the web, reads the top sources, and writes a cited answer.", icon: _jsx(Sparkles, { className: "h-6 w-6" }) }), _jsx(LandingSuggestions, { focus: focus, onFocusChange: setFocus, onSubmit: submit })] })) : (_jsxs(ConversationContent, { children: [messages.map((m, i) => (_jsx(MessageView, { msg: m, isLast: i === messages.length - 1, isRunning: isRunning, agentState: agentState, isFirstUser: isFirstUserAfterAssistant(messages, i), onFollowUp: submit }, m.id))), isRunning &&
                                 messages.filter((m) => m.role === "assistant").length === 0 && (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: "AI" }), _jsx(MessageContent, { variant: "flat", children: _jsxs("div", { className: "flex items-center gap-2 text-xs text-muted-foreground", children: [_jsx(Loader, { size: 14 }), _jsx("span", { children: "Thinking\u2026" })] }) })] })), (agentState.error || session.error) && (_jsx("div", { className: "mt-3", children: _jsx(ErrorBanner, { error: agentState.error ?? {
                                         message: session.error.message,
                                         severity: "error",
@@ -242,7 +248,7 @@ export function AnvilPerplexity({ className, defaultFocus = "web", }) {
                                                         e.preventDefault();
                                                         submit(input);
                                                     }
-                                                } }), _jsxs("div", { className: "flex items-center gap-1 shrink-0", children: [_jsx("div", { className: "hidden sm:flex items-center gap-1", children: _jsx(FocusModeSelector, { focus: focus, onChange: setFocus, disabled: isRunning }) }), _jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: _jsx(Button, { type: "submit", size: "icon", disabled: !input.trim() || isRunning, className: "h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform", children: _jsx(ArrowUp, { className: "h-4 sm:h-[18px] w-4 sm:w-[18px]" }) }) }), _jsx(TooltipContent, { children: "Send" })] })] })] }) }), _jsx("div", { className: "mt-1.5 sm:mt-2 text-center text-[9px] sm:text-[10px] text-muted-foreground px-2", children: "Anvil can make mistakes. Verify important info." })] }) }) })] }) }));
+                                                } }), _jsxs("div", { className: "flex items-center gap-1 shrink-0", children: [_jsx("div", { className: "hidden sm:flex items-center gap-1", children: _jsx(FocusModeSelector, { focus: focus, onChange: setFocus, disabled: isRunning }) }), _jsxs(Tooltip, { children: [_jsx(TooltipTrigger, { asChild: true, children: isRunning ? (_jsx(Button, { type: "button", size: "icon", variant: "destructive", onClick: stop, className: "h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform", "aria-label": "Stop", children: _jsx(Square, { className: "h-3.5 w-3.5 fill-current" }) })) : (_jsx(Button, { type: "submit", size: "icon", disabled: !input.trim(), className: "h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform", children: _jsx(ArrowUp, { className: "h-4 sm:h-[18px] w-4 sm:w-[18px]" }) })) }), _jsx(TooltipContent, { children: isRunning ? "Stop" : "Send" })] })] })] }) }), _jsx("div", { className: "mt-1.5 sm:mt-2 text-center text-[9px] sm:text-[10px] text-muted-foreground px-2", children: "Anvil can make mistakes. Verify important info." })] }) }) })] }) }));
 }
 // ── Helpers ──────────────────────────────────────────────────────
 function isFirstUserAfterAssistant(messages, i) {
@@ -254,16 +260,16 @@ function isFirstUserAfterAssistant(messages, i) {
     return messages[i - 1]?.role === "user";
 }
 // ── Message view ────────────────────────────────────────────────
-function MessageView({ msg, isLast, isRunning, agentState, isFirstUser, }) {
+function MessageView({ msg, isLast, isRunning, agentState, isFirstUser, onFollowUp, }) {
     if (msg.role === "user") {
         return (_jsxs(Message, { from: "user", children: [_jsx(MessageAvatar, { name: "You" }), _jsx(MessageContent, { children: msg.content })] }));
     }
     if (msg.role === "tool") {
         return null; // Tool bubbles hidden in this v2 — sources/reasoning take their place
     }
-    return (_jsx(AssistantMessageView, { msg: msg, isLast: isLast, isRunning: isRunning, agentState: agentState, isFirstUser: isFirstUser }));
+    return (_jsx(AssistantMessageView, { msg: msg, isLast: isLast, isRunning: isRunning, agentState: agentState, isFirstUser: isFirstUser, onFollowUp: onFollowUp }));
 }
-function AssistantMessageView({ msg, isLast, isRunning, agentState, isFirstUser, }) {
+function AssistantMessageView({ msg, isLast, isRunning, agentState, isFirstUser, onFollowUp, }) {
     const sources = msg.sources;
     const related = msg.related;
     const [copied, setCopied] = useState(false);
@@ -297,7 +303,7 @@ function AssistantMessageView({ msg, isLast, isRunning, agentState, isFirstUser,
                                                         step.status === "running"
                                                             ? "font-medium"
                                                             : "text-muted-foreground",
-                                                    ].join(" "), children: [step.intent, step.detail ? `: ${step.detail}` : ""] }), step.status === "done" && (_jsx(Check, { className: "h-3 w-3 text-green-500 shrink-0" })), step.status === "error" && (_jsx(XCircle, { className: "h-3 w-3 text-destructive shrink-0" }))] }, step.id ?? i))) }))] })] })), msg.content && (_jsxs("div", { className: "mt-1", children: [_jsx(Response, { children: msg.content }), isRunning && (_jsx("span", { className: "inline-block w-1.5 h-3.5 bg-foreground ml-0.5 animate-pulse align-text-bottom" }))] })), !msg.content && isRunning && (_jsxs("div", { className: "flex items-center gap-2 text-muted-foreground text-xs", children: [_jsx(Loader, { size: 14 }), _jsx("span", { children: "Thinking\u2026" })] })), sources && sources.length > 0 && !isRunning && (_jsxs(Sources, { autoOpen: true, count: sources.length, children: [_jsx(SourcesTrigger, { count: sources.length }), _jsx(SourcesContent, { children: sources.map((s) => (_jsx(Source, { href: s.url, title: s.title, domain: s.domain }, s.id))) })] })), related && related.length > 0 && !isRunning && (_jsx("div", { className: "mt-3 flex flex-wrap gap-1.5", children: related.map((q, i) => (_jsxs("button", { type: "button", className: "inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors", children: [_jsx(Sparkles, { className: "h-2.5 w-2.5 text-muted-foreground" }), q] }, i))) })), isLast && !isRunning && msg.content && (_jsxs(Actions, { children: [_jsx(Action, { tooltip: copied ? "Copied" : "Copy", label: copied ? "Copied" : "Copy", icon: copied ? Check : Copy, onClick: onCopy }), _jsx(Action, { tooltip: "Good answer", label: "Good answer", icon: ThumbsUp, onClick: () => { } }), _jsx(Action, { tooltip: "Bad answer", label: "Bad answer", icon: ThumbsDown, onClick: () => { } }), _jsx(Action, { tooltip: "Regenerate", label: "Regenerate", icon: RotateCw, onClick: () => { } })] }))] })] }));
+                                                    ].join(" "), children: [step.intent, step.detail ? `: ${step.detail}` : ""] }), step.status === "done" && (_jsx(Check, { className: "h-3 w-3 text-green-500 shrink-0" })), step.status === "error" && (_jsx(XCircle, { className: "h-3 w-3 text-destructive shrink-0" }))] }, step.id ?? i))) }))] })] })), msg.content && (_jsxs("div", { className: "mt-1", children: [_jsx(Response, { children: msg.content }), isRunning && (_jsx("span", { className: "inline-block w-1.5 h-3.5 bg-foreground ml-0.5 animate-pulse align-text-bottom" }))] })), !msg.content && isRunning && (_jsxs("div", { className: "flex items-center gap-2 text-muted-foreground text-xs", children: [_jsx(Loader, { size: 14 }), _jsx("span", { children: "Thinking\u2026" })] })), sources && sources.length > 0 && !isRunning && (_jsxs(Sources, { autoOpen: true, count: sources.length, children: [_jsx(SourcesTrigger, { count: sources.length }), _jsx(SourcesContent, { children: sources.map((s) => (_jsx(Source, { href: s.url, title: s.title, domain: s.domain }, s.id))) })] })), related && related.length > 0 && !isRunning && (_jsx("div", { className: "mt-3 flex flex-wrap gap-1.5", children: related.map((q, i) => (_jsxs("button", { type: "button", onClick: () => onFollowUp?.(q), className: "inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors text-left", children: [_jsx(Sparkles, { className: "h-2.5 w-2.5 text-muted-foreground shrink-0" }), q] }, i))) })), isLast && !isRunning && msg.content && (_jsxs(Actions, { children: [_jsx(Action, { tooltip: copied ? "Copied" : "Copy", label: copied ? "Copied" : "Copy", icon: copied ? Check : Copy, onClick: onCopy }), _jsx(Action, { tooltip: "Good answer", label: "Good answer", icon: ThumbsUp, onClick: () => { } }), _jsx(Action, { tooltip: "Bad answer", label: "Bad answer", icon: ThumbsDown, onClick: () => { } }), _jsx(Action, { tooltip: "Regenerate", label: "Regenerate", icon: RotateCw, onClick: () => { } })] }))] })] }));
 }
 // ── Landing suggestions ─────────────────────────────────────────
 function LandingSuggestions({ focus, onFocusChange, onSubmit, }) {

@@ -74,8 +74,8 @@ type tavilyResponse struct {
 		Content string  `json:"content"`
 		Score   float64 `json:"score"`
 	} `json:"results"`
-	Answer    string `json:"answer,omitempty"`
-	FollowUp  []string `json:"follow_up_questions,omitempty"`
+	Answer   string   `json:"answer,omitempty"`
+	FollowUp []string `json:"follow_up_questions,omitempty"`
 }
 
 // Execute runs the search.
@@ -101,11 +101,11 @@ func (t *TavilySearchTool) Execute(ctx context.Context, args map[string]interfac
 	}
 
 	body := map[string]interface{}{
-		"query":                query,
-		"max_results":          count,
-		"topic":                topic,
-		"include_raw_content":  false, // keep response small
-		"include_answer":       true,  // Tavily synthesizes a short answer
+		"query":               query,
+		"max_results":         count,
+		"topic":               topic,
+		"include_raw_content": false, // keep response small
+		"include_answer":      true,  // Tavily synthesizes a short answer
 	}
 	bodyJSON, _ := json.Marshal(body)
 

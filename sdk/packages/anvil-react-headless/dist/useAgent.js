@@ -130,7 +130,10 @@ export function useAgent(options = {}) {
         setPendingInterrupt(null);
         pendingInterruptRef.current = null;
         try {
-            const result = await startRef.current?.(text, tid ? { threadId: tid } : undefined);
+            const result = await startRef.current?.(text, {
+                ...(tid ? { threadId: tid } : {}),
+                ...(opts?.focus ? { focus: opts.focus } : {}),
+            });
             if (result) {
                 threadIdRef.current = result.threadId;
                 setThreadId(result.threadId);

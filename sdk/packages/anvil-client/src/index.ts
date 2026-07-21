@@ -103,10 +103,11 @@ export class AnvilClient {
    */
   async startTask(
     task: string,
-    opts?: { threadId?: string },
+    opts?: { threadId?: string; focus?: string },
   ): Promise<{ sessionId: string; threadId: string; streamUrl: string }> {
     const body: Record<string, string> = { task, question: task };
     if (opts?.threadId) body.thread_id = opts.threadId;
+    if (opts?.focus) body.focus = opts.focus;
     const r = await this.config.fetch(`${this.config.baseUrl}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -166,6 +167,30 @@ export class AnvilClient {
     if (!r.ok) throw new Error(`deliverToolResult failed: ${r.status}`);
   }
 
+  /** Cancel an in-flight session (Stop button). Server cancels the search goroutine. */
+  async cancelSession(sessionId: string): Promise<void> {
+    try {
+      await this.config.fetch(`${this.config.baseUrl}/sessions/${sessionId}/cancel`, {
+        method: "POST",
+      });
+    } catch {
+      // best-effort
+    }
+  }
+
+  /** Load server-side thread memory (messages + session ids). */
+  async getThread(threadId: string): Promise<{
+    thread_id: string;
+    session_ids: string[];
+    messages: Array<{ role: string; content: string }>;
+  }> {
+    const r = await this.config.fetch(
+      `${this.config.baseUrl}/perplexity/thread/${encodeURIComponent(threadId)}`,
+    );
+    if (!r.ok) throw new Error(`getThread failed: ${r.status}`);
+    return r.json();
+  }
+
   /**
    * Subscribe to events for a session. Returns a Subscription handle.
    *
@@ -177,68 +202,98 @@ export class AnvilClient {
     sessionId: string,
     onEvent: (e: AnvilEvent<T>) => void,
   ): Subscription {
-    const url = `${this.config.baseUrl}/sessions/${sessionId}/events`;
+    // Prefer perplexity stream path; sessions shim also works.
+    const base = `${this.config.baseUrl}/sessions/${sessionId}/events`;
     let es: EventSource | null = null;
     let closed = false;
     let lastId = 0;
     let count = 0;
     let state: "connecting" | "open" | "closed" = "connecting";
+    let retryMs = 1000;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const EVENT_TYPES = [
+      "session.start",
+      "session.resume",
+      "plan.step",
+      "answer.chunk",
+      "think.chunk",
+      "frontend.call",
+      "sources.found",
+      "tool.call",
+      "tool.result",
+      "checkpoint",
+      "subagent",
+      "anvil.dropped",
+      "subscriber.dropped",
+      "error",
+      "done",
+      "paused",
+      "ready",
+    ] as const;
+
+    const handle = (e: MessageEvent) => {
+      try {
+        // ready event is a control frame without full AnvilEvent shape
+        if ((e as any).type === "ready") {
+          state = "open";
+          return;
+        }
+        const data = JSON.parse(e.data) as AnvilEvent<T>;
+        if (e.lastEventId) {
+          data.id = Number(e.lastEventId);
+        }
+        if (typeof data.id === "number" && !Number.isNaN(data.id)) {
+          lastId = data.id;
+        }
+        count++;
+        if (data.type === "anvil.dropped") {
+          this.config.onServerDrop(data);
+        } else if (data.type === "subscriber.dropped") {
+          this.config.onSubscriberDrop(data);
+        }
+        onEvent(data);
+      } catch (err) {
+        console.error("anvil: malformed event", e.data, err);
+      }
+    };
 
     const connect = (since = lastId) => {
       if (closed) return;
       state = "connecting";
-      const u = since > 0 ? `${url}?since=${since}` : url;
+      // Close previous ES so native auto-reconnect does not fight us
+      try {
+        es?.close();
+      } catch {
+        /* ignore */
+      }
+      const u = since > 0 ? `${base}?since=${since}` : base;
       es = new this.config.EventSource!(u);
 
       es.onopen = () => {
         state = "open";
+        retryMs = 1000; // reset backoff
       };
       es.onerror = () => {
-        // EventSource will auto-reconnect; we just need to track
-        // that the connection went down. The next event we get
-        // will have the correct id, so onclose isn't needed.
+        if (closed) return;
         state = "connecting";
-      };
-      // The 'message' event is the default — we use named events
-      // for typed handlers. SSE sends each event as a separate
-      // message with the event type as the discriminator.
-      const handle = (e: MessageEvent) => {
         try {
-          const data = JSON.parse(e.data) as AnvilEvent<T>;
-          // The id is sent as the SSE "id:" field, available as
-          // e.lastEventId on the MessageEvent.
-          if (e.lastEventId) {
-            data.id = Number(e.lastEventId);
-          }
-          lastId = data.id;
-          count++;
-          if (data.type === "anvil.dropped") {
-            this.config.onServerDrop(data);
-          } else if (data.type === "subscriber.dropped") {
-            this.config.onSubscriberDrop(data);
-          }
-          onEvent(data);
-        } catch (err) {
-          // Malformed event — log and continue
-          console.error("anvil: malformed event", e.data, err);
+          es?.close();
+        } catch {
+          /* ignore */
         }
+        // Custom reconnect with ?since= — native ES cannot inject query params
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        const wait = retryMs;
+        retryMs = Math.min(retryMs * 2, 8000);
+        reconnectTimer = setTimeout(() => connect(lastId), wait);
       };
-      // SSE named events arrive as separate MessageEvent types
-      es.addEventListener("session.start", handle as any);
-      es.addEventListener("session.resume", handle as any);
-      es.addEventListener("plan.step", handle as any);
-      es.addEventListener("answer.chunk", handle as any);
-      es.addEventListener("frontend.call", handle as any);
-      es.addEventListener("sources.found", handle as any);
-      es.addEventListener("tool.call", handle as any);
-      es.addEventListener("tool.result", handle as any);
-      es.addEventListener("checkpoint", handle as any);
-      es.addEventListener("subagent", handle as any);
-      es.addEventListener("anvil.dropped", handle as any);
-      es.addEventListener("subscriber.dropped", handle as any);
-      es.addEventListener("error", handle as any);
-      es.addEventListener("done", handle as any);
-      es.addEventListener("paused", handle as any);
+
+      for (const t of EVENT_TYPES) {
+        es.addEventListener(t, handle as EventListener);
+      }
+      // Also listen for default message events as fallback
+      es.onmessage = handle as any;
     };
 
     connect();
@@ -247,6 +302,7 @@ export class AnvilClient {
       unsubscribe: () => {
         closed = true;
         state = "closed";
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         es?.close();
       },
       count: () => count,

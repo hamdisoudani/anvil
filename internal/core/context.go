@@ -5,27 +5,28 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 )
 
 // ContextManager packs the LLM context window.
 //
 // 4-tier packing:
-//   1. System (~2k)    — fixed, cached
-//   2. Tools (~5k)     — fixed, cached
-//   3. Scratchpad (~8k) — current plan
-//   4. Recent (~40k)   — last 20 turns
-//   5. Summary (~5k)   — compressed older history
-//   6. RAG (~20k)      — relevant older events
-//   7. Headroom        — rest for response
+//  1. System (~2k)    — fixed, cached
+//  2. Tools (~5k)     — fixed, cached
+//  3. Scratchpad (~8k) — current plan
+//  4. Recent (~40k)   — last 20 turns
+//  5. Summary (~5k)   — compressed older history
+//  6. RAG (~20k)      — relevant older events
+//  7. Headroom        — rest for response
 //
 // Total target: 200k tokens for Claude. We aim for 80k of input, 120k for
 // the model's response, so it can think hard when it needs to.
 type ContextManager struct {
-	mu         sync.Mutex
-	maxTokens  int
-	sysPrompt  string
-	cacheKey   string
+	mu        sync.Mutex
+	maxTokens int
+	sysPrompt string
+	cacheKey  string
 }
 
 func NewContextManager(maxTokens int) *ContextManager {
@@ -93,7 +94,7 @@ func (cm *ContextManager) MaybeSummarize(s *State) {
 	defer cm.mu.Unlock()
 
 	if len(s.History) < 40 {
-		return  // not enough history to bother
+		return // not enough history to bother
 	}
 
 	// Estimate token cost (rough: 4 chars per token)
@@ -102,7 +103,7 @@ func (cm *ContextManager) MaybeSummarize(s *State) {
 		estTokens += len(m.Content) / 4
 	}
 	if estTokens < 60_000 {
-		return  // fits comfortably, no need
+		return // fits comfortably, no need
 	}
 
 	// Compress oldest 30 turns into the long-term summary
@@ -113,23 +114,30 @@ func (cm *ContextManager) MaybeSummarize(s *State) {
 	s.History = s.History[30:]
 }
 
-// summarizeInto folds the oldest turns into the running summary. Real impl
-// would call the LLM with a "compress this" prompt. Stub for now.
+// summarizeInto folds the oldest turns into a compact running summary.
+// Extractive + structured (no LLM required on the hot path). Caps size so
+// the long-term block never blows the context budget.
 func (cm *ContextManager) summarizeInto(s *State, old []Message) {
-	// Real implementation: call router with "summarize this conversation" prompt
-	// and append the result to s.LongTerm.
-	//
-	// For now, a simple concat fallback so the structure works.
-	var add string
-	for _, m := range old {
-		add += fmt.Sprintf("%s: %s\n", m.Role, m.Content)
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Compressed %d turns:\n", len(old)))
+	for i, m := range old {
+		role := m.Role
+		content := strings.TrimSpace(m.Content)
+		// Keep tool results short
+		if role == "tool" && len(content) > 200 {
+			content = content[:200] + "…"
+		} else if len(content) > 320 {
+			content = content[:320] + "…"
+		}
+		b.WriteString(fmt.Sprintf("%d. [%s] %s\n", i+1, role, content))
 	}
+	add := b.String()
 	if s.LongTerm == "" {
 		s.LongTerm = add
 	} else {
 		s.LongTerm = s.LongTerm + "\n---\n" + add
 	}
-	// Cap at 5k chars to avoid blowing the budget
+	// Cap at 5k chars — keep the *newest* summary content
 	if len(s.LongTerm) > 5000 {
 		s.LongTerm = s.LongTerm[len(s.LongTerm)-5000:]
 	}

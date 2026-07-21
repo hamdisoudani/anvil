@@ -226,13 +226,14 @@ export interface UseSessionResult {
      */
     start: (task: string, opts?: {
         threadId?: string;
+        focus?: string;
     }) => Promise<{
         sessionId: string;
         threadId: string;
     }>;
     /** Resume a paused session. */
     resume: (sessionId: string) => Promise<string>;
-    /** Cancel the current session (close the subscription). */
+    /** Cancel the current session (server-side stop + close subscription). */
     cancel: () => void;
     /** Number of events received. */
     eventCount: number;

@@ -74,6 +74,14 @@ type Result struct {
 	Plan     *SearchPlan
 }
 
+// RunOpts configures a single orchestrator run.
+type RunOpts struct {
+	// Prior conversation turns in this thread (user/assistant pairs).
+	History []Message
+	// Focus maps to preferred SourceKind: web|academic|news|reddit|youtube.
+	Focus string
+}
+
 // planStep is a small helper to emit a PlanStep event with string ID.
 func planStepPayload(id, intent, status, detail string) map[string]interface{} {
 	p := map[string]interface{}{
@@ -88,7 +96,8 @@ func planStepPayload(id, intent, status, detail string) map[string]interface{} {
 }
 
 // Run executes the full flow.
-func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Event)) (*Result, error) {
+// opts.History is prior thread turns; opts.Focus biases search sources.
+func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Event), opts RunOpts) (*Result, error) {
 	result := &Result{Question: question, Sources: []Source{}, Related: []string{}}
 
 	emit := func(t EventType, p map[string]interface{}) {
@@ -103,7 +112,7 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 
 	// ── Step 1: PLAN ────────────────────────────────────────────────
 	emit(EventPlanStep, planStepPayload("plan", "Planning the search", "running", ""))
-	plan, err := o.PlanSearch(ctx, question)
+	plan, err := o.PlanSearch(ctx, question, opts)
 	if err != nil {
 		// Fall back to a single-query plan so the demo still works
 		plan = &SearchPlan{
@@ -118,6 +127,11 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	emit(EventPlanStep, planStepPayload("plan", "Plan built", "done",
 		fmt.Sprintf("%d sub-queries", len(plan.SubQueries))))
 
+	// Bias sources by focus mode when provided
+	if opts.Focus != "" {
+		applyFocus(plan, opts.Focus)
+	}
+
 	// Emit the plan to the frontend so the user sees the structure
 	emit(EventFrontendCall, map[string]interface{}{
 		"name":  ToolShowPlanStep,
@@ -126,7 +140,7 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 
 	// If no search needed (chat-only), just synthesize directly
 	if !plan.NeedsSearch || len(plan.SubQueries) == 0 {
-		return o.synthesizeChatOnly(ctx, question, plan, onEvent)
+		return o.synthesizeChatOnly(ctx, question, plan, onEvent, opts.History)
 	}
 
 	// ── Step 2: EXECUTE (parallel) ──────────────────────────────────
@@ -251,7 +265,7 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 
 	// ── Step 4: SYNTHESIZE ──────────────────────────────────────────
 	emit(EventPlanStep, planStepPayload("synthesize", "Writing the answer", "running", ""))
-	answer, err := o.synthesize(ctx, question, sources, pages, plan.SynthesizeHint, onEvent)
+	answer, err := o.synthesize(ctx, question, sources, pages, plan.SynthesizeHint, onEvent, opts.History)
 	if err != nil {
 		return nil, fmt.Errorf("synthesize: %w", err)
 	}
@@ -289,7 +303,7 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 }
 
 // synthesizeChatOnly handles the case where the question doesn't need search.
-func (o *Orchestrator) synthesizeChatOnly(ctx context.Context, question string, plan *SearchPlan, onEvent func(Event)) (*Result, error) {
+func (o *Orchestrator) synthesizeChatOnly(ctx context.Context, question string, plan *SearchPlan, onEvent func(Event), history []Message) (*Result, error) {
 	result := &Result{Question: question, Sources: []Source{}, Related: []string{}}
 	emit := func(t EventType, p map[string]interface{}) {
 		if onEvent != nil {
@@ -297,9 +311,14 @@ func (o *Orchestrator) synthesizeChatOnly(ctx context.Context, question string, 
 		}
 	}
 	emit(EventPlanStep, planStepPayload("generate", "Generating answer", "running", ""))
+	msgs := append([]Message{}, history...)
+	if len(msgs) > 12 {
+		msgs = msgs[len(msgs)-12:]
+	}
+	msgs = append(msgs, Message{Role: "user", Content: question})
 	req := LLMRequest{
-		SystemPrompt: "You are a helpful research assistant. Answer the user's question directly and concisely.",
-		Messages:     []Message{{Role: "user", Content: question}},
+		SystemPrompt: "You are a helpful research assistant. Answer the user's question directly and concisely. Use prior conversation context when relevant.",
+		Messages:     msgs,
 		MaxTokens:    1500,
 	}
 	var delta strings.Builder
@@ -321,7 +340,7 @@ func (o *Orchestrator) synthesizeChatOnly(ctx context.Context, question string, 
 }
 
 // synthesize asks the LLM to write the answer with [N] citations.
-func (o *Orchestrator) synthesize(ctx context.Context, question string, sources []Source, pages []PageContent, hint string, onEvent func(Event)) (string, error) {
+func (o *Orchestrator) synthesize(ctx context.Context, question string, sources []Source, pages []PageContent, hint string, onEvent func(Event), history []Message) (string, error) {
 	emit := func(t EventType, p map[string]interface{}) {
 		if onEvent != nil {
 			onEvent(Event{Type: t, Payload: p})
@@ -347,9 +366,15 @@ func (o *Orchestrator) synthesize(ctx context.Context, question string, sources 
 		systemPrompt += "\n\nStyle guidance: " + hint
 	}
 
+	msgs := append([]Message{}, history...)
+	// Cap history so we don't blow the context window
+	if len(msgs) > 12 {
+		msgs = msgs[len(msgs)-12:]
+	}
+	msgs = append(msgs, Message{Role: "user", Content: sb.String()})
 	req := LLMRequest{
 		SystemPrompt: systemPrompt,
-		Messages:     []Message{{Role: "user", Content: sb.String()}},
+		Messages:     msgs,
 		MaxTokens:    2000,
 	}
 
@@ -507,4 +532,32 @@ func snippetsToPages(hits []SearchResult, sources []Source) []PageContent {
 		})
 	}
 	return out
+}
+
+// applyFocus biases sub-query Source fields to the requested focus mode.
+func applyFocus(plan *SearchPlan, focus string) {
+	if plan == nil {
+		return
+	}
+	var kind SourceKind
+	switch strings.ToLower(strings.TrimSpace(focus)) {
+	case "academic", "scholar":
+		kind = SourceAcademic
+	case "news":
+		kind = SourceNews
+	case "reddit", "social":
+		kind = SourceReddit
+	case "youtube", "video":
+		kind = SourceYouTube
+	case "web", "":
+		kind = SourceWeb
+	default:
+		kind = SourceWeb
+	}
+	for i := range plan.SubQueries {
+		// Don't override if planner already set a non-web source unless focus is explicit
+		if kind != SourceWeb || plan.SubQueries[i].Source == "" {
+			plan.SubQueries[i].Source = kind
+		}
+	}
 }
