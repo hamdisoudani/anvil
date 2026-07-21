@@ -14,21 +14,21 @@ var domainURLRe = regexp.MustCompile(`^https?://([^/]+)/?`)
 // Run executes the full search + answer flow using a real search plan.
 //
 // New flow (Perplexity-style):
-//   1. CLASSIFY + DECOMPOSE + PLAN (one LLM call): produces SearchPlan
-//   2. EXECUTE PLAN: parallel searches (one per sub-query, respecting deps)
-//   3. FILTER: score, dedupe, rank results
-//   4. FETCH: read the top pages
-//   5. SYNTHESIZE: LLM writes the answer with [N] citations
-//   6. EXTRACT citations used
-//   7. GENERATE follow-up questions
+//  1. CLASSIFY + DECOMPOSE + PLAN (one LLM call): produces SearchPlan
+//  2. EXECUTE PLAN: parallel searches (one per sub-query, respecting deps)
+//  3. FILTER: score, dedupe, rank results
+//  4. FETCH: read the top pages
+//  5. SYNTHESIZE: LLM writes the answer with [N] citations
+//  6. EXTRACT citations used
+//  7. GENERATE follow-up questions
 //
 // State lives in the ThreadState (plan, sources) and is broadcast
 // via state patches. The agent loop is the one from core/agent.go;
 // this is the "what should happen" layer.
 type Orchestrator struct {
-	LLM        LLMRouter
-	WebSearch  SearchTool
-	FetchPage  *FetchPageTool
+	LLM       LLMRouter
+	WebSearch SearchTool
+	FetchPage *FetchPageTool
 }
 
 // NewOrchestrator creates the agent.
@@ -137,19 +137,19 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 				emit(EventPlanStep, map[string]interface{}{
 					"id": 2, "detail": "Searching: " + q.Query, "status": "running",
 				})
-								results, err := o.WebSearch.Execute(ctx, map[string]interface{}{
-								"query": q.Query, "count": 8,
-								})
-								if err != nil {
-								emit(EventError, map[string]interface{}{
-								"message": "search failed: " + err.Error(),
-								})
-								return
-								}
-								rs := []SearchResult{}
-								if r, ok := results.([]SearchResult); ok {
-								rs = r
-								}
+				results, err := o.WebSearch.Execute(ctx, map[string]interface{}{
+					"query": q.Query, "count": 8,
+				})
+				if err != nil {
+					emit(EventError, map[string]interface{}{
+						"message": "search failed: " + err.Error(),
+					})
+					return
+				}
+				rs := []SearchResult{}
+				if r, ok := results.([]SearchResult); ok {
+					rs = r
+				}
 				mu.Lock()
 				allResults[q.ID] = rs
 				mu.Unlock()

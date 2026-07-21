@@ -22,9 +22,10 @@ import (
 //     that follows the OpenAI Chat Completions API spec
 //
 // Set:
-//   OPENAI_API_KEY  →  Bearer token
-//   OPENAI_BASE_URL →  e.g. "https://integrate.api.nvidia.com/v1"
-//   OPENAI_MODEL    →  e.g. "meta/llama-3.1-70b-instruct"
+//
+//	OPENAI_API_KEY  →  Bearer token
+//	OPENAI_BASE_URL →  e.g. "https://integrate.api.nvidia.com/v1"
+//	OPENAI_MODEL    →  e.g. "meta/llama-3.1-70b-instruct"
 type OpenAICompatibleRouter struct {
 	APIKey  string
 	BaseURL string

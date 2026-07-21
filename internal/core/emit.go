@@ -65,7 +65,7 @@ func (s *Session) emitDroppedMarker(original Event) {
 	marker := Event{
 		Type: "anvil.dropped",
 		Payload: map[string]interface{}{
-			"reason":   "writer_buffer_full",
+			"reason":        "writer_buffer_full",
 			"original_type": string(original.Type),
 			"original_step": s.State.Step,
 		},
@@ -90,9 +90,9 @@ func (s *Session) emitGapMarker(slow *Sub, original Event) {
 	marker := Event{
 		Type: "subscriber.dropped",
 		Payload: map[string]interface{}{
-			"subscriber_id":  slow.id,
+			"subscriber_id":    slow.id,
 			"subscriber_drops": atomic.LoadUint64(&slow.dropped),
-			"dropped_type":   string(original.Type),
+			"dropped_type":     string(original.Type),
 		},
 		CreatedAt: time.Now(),
 	}
@@ -125,6 +125,27 @@ func (s *Sub) Channel() <-chan Event { return s.Ch }
 
 func (s *Sub) Dropped() uint64 { return atomic.LoadUint64(&s.dropped) }
 func (s *Sub) ID() string      { return s.id }
+
+// Closed reports whether this subscriber has been unsubscribed.
+func (s *Sub) Closed() bool { return s.closed.Load() }
+
+// TrySend non-blockingly delivers an event if the subscriber is still open.
+// Returns false if the channel is closed, full, or the context is cancelled.
+func (s *Sub) TrySend(ctx context.Context, e Event) bool {
+	if s.closed.Load() {
+		return false
+	}
+	select {
+	case s.Ch <- e:
+		return true
+	case <-ctx.Done():
+		return false
+	default:
+		// Channel full — treat as drop, don't block tool execution forever.
+		atomic.AddUint64(&s.dropped, 1)
+		return false
+	}
+}
 
 func (s *Session) subscribe(id string) *Sub {
 	sub := &Sub{

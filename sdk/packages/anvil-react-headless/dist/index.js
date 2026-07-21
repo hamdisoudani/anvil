@@ -471,11 +471,20 @@ export function useAnvilEvent(sessionId, type, handler) {
 // ── useFrontendTool: declare a browser-side tool ─────────────────
 export function useFrontendTool(tool) {
     const { registerTool } = useAnvil();
+    // Keep latest tool implementation without re-registering on every render
     const toolRef = useRef(tool);
     toolRef.current = tool;
+    // Register once per name; re-register only if name changes
     useEffect(() => {
-        return registerTool(toolRef.current);
-    }, [registerTool]);
+        const wrapper = {
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            execute: (input) => toolRef.current.execute(input),
+        };
+        return registerTool(wrapper);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [registerTool, tool.name]);
 }
 export function useChat(sessionId, events) {
     const { events: ownEvents } = useEvents(sessionId);

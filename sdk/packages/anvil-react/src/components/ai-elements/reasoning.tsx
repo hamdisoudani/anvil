@@ -22,12 +22,17 @@ export function Reasoning({
   children,
   ...props
 }: ReasoningProps) {
-  const [open, setOpen] = React.useState(defaultOpen && isStreaming);
+  // Open by default when streaming; respect defaultOpen for static content
+  const [open, setOpen] = React.useState(defaultOpen);
   const prevStreaming = React.useRef(isStreaming);
-  // Auto-collapse when streaming stops (skip first render to avoid flash)
+  // Auto-open when streaming starts; auto-collapse when it ends
   React.useEffect(() => {
-    if (prevStreaming.current !== isStreaming && !isStreaming) {
-      setOpen(false);
+    if (prevStreaming.current !== isStreaming) {
+      if (isStreaming) {
+        setOpen(true);
+      } else {
+        setOpen(false);
+      }
     }
     prevStreaming.current = isStreaming;
   }, [isStreaming]);

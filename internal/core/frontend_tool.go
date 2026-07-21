@@ -26,9 +26,9 @@ type PendingResult struct {
 //
 // Usage:
 //
-//     sub := sess.Stream("frontend")
-//     chart := NewFrontendTool("render_chart", "Render a chart in the UI", sub)
-//     a := core.New(core.WithTools(chart, ...))
+//	sub := sess.Stream("frontend")
+//	chart := NewFrontendTool("render_chart", "Render a chart in the UI", sub)
+//	a := core.New(core.WithTools(chart, ...))
 //
 // The frontend listens on the same stream. When it sees a tool.call
 // for "render_chart", it renders and sends a tool.result back via
@@ -93,18 +93,18 @@ func (t *FrontendTool) Execute(ctx context.Context, args map[string]interface{})
 		t.mu.Unlock()
 	}()
 
-	// Send the call to the frontend via the same event stream
+	// Send the call to the frontend via the same event stream.
+	// Never write to a closed subscriber channel (would panic).
 	callEvent := Event{
 		Type: EventToolCall,
 		Payload: map[string]interface{}{
-			"id":         callID,
-			"name":       t.name,
-			"input":      args,
+			"id":          callID,
+			"name":        t.name,
+			"input":       args,
 			"is_frontend": true, // hint to clients
 		},
 	}
-	// Check if the stream channel is closed before writing
-	if t.stream.closed.Load() {
+	if t.stream == nil || t.stream.Closed() {
 		return nil, fmt.Errorf("frontend tool %s: session stream closed", t.name)
 	}
 	select {

@@ -227,8 +227,10 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := uuidNew()
 	h.Bus.AddSessionToThread(threadID, sessionID)
-	// FIX BUG 1: use the resolved `question` variable, not req.Question
-	go h.runSearch(r.Context(), sessionID, threadID, question)
+	// Detach from the HTTP request context: handleAsk returns immediately
+	// after writing JSON, so r.Context() is cancelled right after. Search
+	// must outlive the request. Still honour process shutdown via Background.
+	go h.runSearch(context.Background(), sessionID, threadID, question)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

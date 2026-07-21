@@ -18,7 +18,11 @@ func New(opts ...AgentOption) *Agent {
 
 // WithEventStore sets the event store (Postgres, in-memory, etc).
 func WithEventStore(s EventStore) AgentOption {
-	return func(a *Agent) { a.store = s; if a.cp == nil { /* leave cp alone */ } }
+	return func(a *Agent) {
+		a.store = s
+		if a.cp == nil { /* leave cp alone */
+		}
+	}
 }
 
 // WithCheckpointStore sets the checkpoint store.

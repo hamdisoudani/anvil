@@ -130,10 +130,10 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 		toolCalls   []ToolCall
 		usage       = TokenUsage{}
 		currentTool map[string]interface{}
+		stopReason  = "end_turn"
 	)
 
 	reader := bufio.NewReader(resp.Body)
-	var ev sseEvent
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -143,13 +143,13 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 			return LLMResponse{}, err
 		}
 		line = strings.TrimRight(line, "\r\n")
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if err := json.Unmarshal([]byte(data), &ev); err != nil {
-				continue // skip malformed data lines
-			}
-		} else {
+		if !strings.HasPrefix(line, "data: ") {
 			continue // skip "event:" lines, blank lines, etc.
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		var ev sseEvent
+		if err := json.Unmarshal([]byte(data), &ev); err != nil {
+			continue // skip malformed data lines
 		}
 
 		switch ev.Type {
@@ -168,14 +168,16 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 				}
 			}
 		case "content_block_delta":
-			if delta, ok := ev.Delta["type"].(string); ok && delta == "text_delta" {
+			deltaType, _ := ev.Delta["type"].(string)
+			switch deltaType {
+			case "text_delta":
 				if text, ok := ev.Delta["text"].(string); ok {
 					fullText.WriteString(text)
 					if onDelta != nil {
 						onDelta(text)
 					}
 				}
-			} else if delta == "input_json_delta" {
+			case "input_json_delta":
 				if pj, ok := ev.Delta["partial_json"].(string); ok && currentTool != nil {
 					if s, ok := currentTool["input"].(string); ok {
 						currentTool["input"] = s + pj
@@ -199,14 +201,9 @@ func (r *AnthropicRouter) Stream(ctx context.Context, req LLMRequest, onDelta fu
 					usage.OutputTokens = int(v)
 				}
 			}
-		}
-	}
-
-	// Extract stop_reason from the last message_delta if possible
-	stopReason := "end_turn"
-	if ev.Delta != nil {
-		if sr, ok := ev.Delta["stop_reason"].(string); ok && sr != "" {
-			stopReason = sr
+			if sr, ok := ev.Delta["stop_reason"].(string); ok && sr != "" {
+				stopReason = sr
+			}
 		}
 	}
 

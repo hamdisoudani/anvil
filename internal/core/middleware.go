@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // ── Agent Middleware ──────────────────────────────────────────────
@@ -87,21 +88,34 @@ func StepLogger(next MiddlewareStep) MiddlewareStep {
 }
 
 // RateLimiter limits tool calls per second.
+// Token bucket is created once at factory construction time (not lazily
+// inside the request path, which would race under concurrent tools).
 func RateLimiter(maxPerSecond int) Middleware {
-	var tokens chan struct{}
+	if maxPerSecond <= 0 {
+		maxPerSecond = 1
+	}
+	tokens := make(chan struct{}, maxPerSecond)
+	for i := 0; i < maxPerSecond; i++ {
+		tokens <- struct{}{}
+	}
+	// Refill one token per 1/maxPerSecond seconds
+	go func() {
+		ticker := time.NewTicker(time.Second / time.Duration(maxPerSecond))
+		defer ticker.Stop()
+		for range ticker.C {
+			select {
+			case tokens <- struct{}{}:
+			default:
+				// bucket full
+			}
+		}
+	}()
 	return func(next MiddlewareStep) MiddlewareStep {
 		return func(ctx context.Context, req MiddlewareRequest) (MiddlewareResponse, error) {
 			if req.Type == MiddlewareTool {
-				// Limiting only tool calls
-				if tokens == nil {
-					tokens = make(chan struct{}, maxPerSecond)
-					for i := 0; i < maxPerSecond; i++ {
-						tokens <- struct{}{}
-					}
-				}
 				select {
 				case <-tokens:
-					defer func() { go func() { tokens <- struct{}{} }() }()
+					// acquired
 				case <-ctx.Done():
 					return MiddlewareResponse{}, ctx.Err()
 				}

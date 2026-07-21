@@ -80,7 +80,8 @@ func (a *Agent) newSession(ctx context.Context, task string) (*Session, error) {
 			// Stub: real impl would emit a metric, alert, or log
 			// when drops exceed a threshold per sub per minute.
 		},
-		done: make(chan struct{}),
+		done:       make(chan struct{}),
+		middleware: a.middleware,
 	}
 	if err := a.cp.Save(ctx, sess.State); err != nil {
 		return nil, fmt.Errorf("save initial state: %w", err)
@@ -97,22 +98,23 @@ func (a *Agent) loadSession(ctx context.Context, id uuid.UUID) (*Session, error)
 	}
 	writer := NewAsyncEventWriter(a.store, 4096)
 	sess := &Session{
-		State:  state,
-		cfg:    a.cfg,
-		subs:   make(map[*Sub]struct{}),
-		ctx:    ctx,
-		store:  a.store,
-		cp:     a.cp,
-		cache:  a.cache,
-		router: a.router,
-		tools:  a.tools,
-		ctxMgr: NewContextManager(a.cfg.ContextMaxTokens),
-		writer: writer,
+		State:       state,
+		cfg:         a.cfg,
+		subs:        make(map[*Sub]struct{}),
+		ctx:         ctx,
+		store:       a.store,
+		cp:          a.cp,
+		cache:       a.cache,
+		router:      a.router,
+		tools:       a.tools,
+		ctxMgr:      NewContextManager(a.cfg.ContextMaxTokens),
+		writer:      writer,
 		recordStore: a.recordStore,
 		onSlowSubscriber: func(sub *Sub, e Event) {
 			// Same as newSession
 		},
-		done: make(chan struct{}),
+		done:       make(chan struct{}),
+		middleware: a.middleware,
 	}
 	return sess, nil
 }
@@ -135,8 +137,9 @@ func (s *Session) checkpoint() {
 // a frontend client sends a tool.result event back over the stream.
 //
 // Usage:
-//   // In your HTTP handler, when you receive a tool_result from the frontend:
-//   session.DeliverToolResult(callID, result, err)
+//
+//	// In your HTTP handler, when you receive a tool_result from the frontend:
+//	session.DeliverToolResult(callID, result, err)
 func (s *Session) DeliverToolResult(callID string, result interface{}, err error) {
 	s.mu.RLock()
 	tools := s.tools
