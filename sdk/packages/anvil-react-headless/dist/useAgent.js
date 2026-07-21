@@ -113,16 +113,29 @@ export function useAgent(options = {}) {
         startRef.current = session.start;
         cancelRef.current = session.cancel;
     }, [session.start, session.cancel]);
-    // Send: start a new run or continue
-    const send = useCallback(async (text) => {
+    // Track the active thread ID in state so consumers re-render when it changes.
+    const [threadId, setThreadId] = useState(null);
+    const threadIdRef = useRef(null);
+    // Send: start a new run or continue. When `opts.threadId` is given
+    // (or the previous run produced one), events from this session are
+    // APPENDED to the existing log so multi-turn history stays visible.
+    // Only an explicit `reset()` (or a brand-new thread) clears the log.
+    const send = useCallback(async (text, opts) => {
         if (!text.trim())
             return;
-        setSharedEvents([]);
+        const tid = opts?.threadId ?? threadIdRef.current ?? undefined;
+        // Always clear any leftover interrupt from a prior session before
+        // starting a new run. The shared event log is preserved across
+        // multi-turn messages in the same thread (we just append).
         setPendingInterrupt(null);
         pendingInterruptRef.current = null;
         try {
-            const sid = await startRef.current?.(text);
-            return sid;
+            const result = await startRef.current?.(text, tid ? { threadId: tid } : undefined);
+            if (result) {
+                threadIdRef.current = result.threadId;
+                setThreadId(result.threadId);
+            }
+            return result;
         }
         catch (err) {
             console.error("useAgent.send failed:", err);
@@ -133,11 +146,13 @@ export function useAgent(options = {}) {
     const cancel = useCallback(() => {
         cancelRef.current?.();
     }, []);
-    // Reset: cancel + clear events
+    // Reset: cancel + clear events + forget thread
     const reset = useCallback(() => {
         setSharedEvents([]);
         setPendingInterrupt(null);
         pendingInterruptRef.current = null;
+        threadIdRef.current = null;
+        setThreadId(null);
         cancelRef.current?.();
     }, []);
     // Approve/reject interrupt
@@ -164,6 +179,7 @@ export function useAgent(options = {}) {
         isDone,
         error,
         sessionId: session.sessionId,
+        threadId,
         status: session.status,
         send,
         cancel,

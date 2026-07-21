@@ -89,14 +89,25 @@ export interface UseAgentReturn {
     isProcessing: boolean;
     isDone: boolean;
     error: string | null;
-    sessionId: string | null;
-    status: UseSessionResult["status"];
-    /** Send a message to the agent */
-    send: (text: string) => Promise<string | void>;
+    /** Active conversation thread ID, if the server supplied one. */
+    threadId: string | null;
+    /**
+     * Send a message to the agent. Pass `threadId` to continue an
+     * existing multi-session conversation. Events remain in the shared
+     * log; call `reset()` to explicitly start a new thread.
+     */
+    send: (text: string, opts?: {
+        threadId?: string;
+    }) => Promise<{
+        sessionId: string;
+        threadId: string;
+    } | void>;
     /** Cancel the current agent run */
     cancel: () => void;
     /** Reset everything / start a new thread */
     reset: () => void;
+    sessionId: string | null;
+    status: UseSessionResult["status"];
     /** The current interrupt waiting for user input, if any. */
     pendingInterrupt: PendingInterrupt | null;
     /** Approve the current interrupt with a result. Auto-sends to agent. */

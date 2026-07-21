@@ -420,17 +420,20 @@ export function useSession(opts = {}) {
     // NOTE: This is the ONLY place subscribe() is called.
     // start() and resume() set sessionId; the effect subscribes.
     // This eliminates the double-subscription bug (BUG-H1).
-    const start = useCallback(async (task) => {
+    const start = useCallback(async (task, opts) => {
         setStatus("starting");
         setError(null);
         try {
-            const { sessionId: newId } = await client.startTask(task);
+            const result = await client.startTask(task, opts);
             // Subscribe immediately AND set sessionId.
             // The sessionRef guard in subscribe() prevents the effect from
             // double-subscribing when sessionId changes.
-            setSessionId(newId);
-            subscribe(newId);
-            return newId;
+            setSessionId(result.sessionId);
+            subscribe(result.sessionId);
+            return {
+                sessionId: result.sessionId,
+                threadId: result.threadId,
+            };
         }
         catch (err) {
             setError(err instanceof Error ? err : new Error(String(err)));
@@ -527,9 +530,12 @@ export function useChat(sessionId, events) {
         for (const e of allEvents) {
             switch (e.type) {
                 case "session.start": {
-                    // Reset any pending state from a previous session
+                    // New turn in this thread — clear per-turn transient state.
+                    // Cumulative chat messages (out[]) are PRESERVED so multi-turn
+                    // history stays visible. Only `currentAssistant` (which is
+                    // already null after a prior `done`) and `pendingSources` reset.
                     pendingSources = null;
-                    // The user message is the task itself; emit it once.
+                    // The user message is the task itself; emit it once per turn.
                     const task = e.payload?.task;
                     if (task) {
                         out.push({

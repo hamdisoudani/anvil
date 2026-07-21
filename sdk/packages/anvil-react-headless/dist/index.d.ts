@@ -215,8 +215,21 @@ export interface UseSessionResult {
     sessionId: string | null;
     status: "idle" | "starting" | "running" | "paused" | "done" | "error";
     error: Error | null;
-    /** Send a new task. Replaces any existing session. */
-    start: (task: string) => Promise<string>;
+    /**
+     * Start a new agent task. If `opts.threadId` is provided, the new
+     * session continues that thread (the server binds the new session
+     * to the thread and the SDK appends the new session's events to
+     * the existing shared event log, preserving prior chat history).
+     *
+     * Returns the new `sessionId` and the resolved `threadId`. If no
+     * threadId was supplied, the server-generated one is returned.
+     */
+    start: (task: string, opts?: {
+        threadId?: string;
+    }) => Promise<{
+        sessionId: string;
+        threadId: string;
+    }>;
     /** Resume a paused session. */
     resume: (sessionId: string) => Promise<string>;
     /** Cancel the current session (close the subscription). */

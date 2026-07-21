@@ -113,6 +113,28 @@ interface ThreadMeta {
   timestamp: number;
 }
 
+const threadMessagesKey = (id: string) => `anvil_thread_messages_${id}`;
+
+function loadThreadMessages(id: string | null): ChatMessage[] {
+  if (typeof window === "undefined" || !id) return [];
+  try {
+    const value = JSON.parse(localStorage.getItem(threadMessagesKey(id)) || "[]");
+    return Array.isArray(value) ? (value as ChatMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveThreadMessages(id: string, messages: ChatMessage[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(threadMessagesKey(id), JSON.stringify(messages));
+}
+
+function deleteThreadMessages(id: string) {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(threadMessagesKey(id));
+}
+
 function loadThreads(): ThreadMeta[] {
   if (typeof window === "undefined") return [];
   try {
@@ -135,6 +157,7 @@ function deleteThread(id: string) {
     "anvil_threads",
     JSON.stringify(loadThreads().filter((t) => t.id !== id)),
   );
+  deleteThreadMessages(id);
 }
 
 // ── URL routing ──────────────────────────────────────────────────
@@ -164,22 +187,30 @@ export function AnvilPerplexity({
   className,
   defaultFocus = "web",
 }: AnvilPerplexityProps) {
-  // SHARED EVENT STREAM — single source of truth
+  // SHARED EVENT STREAM — single source of truth for the active thread.
+  // Follow-up turns APPEND events; only newThread()/URL switch clears.
   const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
   const [threadId, setThreadId] = useState<string | null>(getThreadIdFromUrl);
+  // Hydrated messages from localStorage when reopening a thread
+  const [hydratedMessages, setHydratedMessages] = useState<ChatMessage[]>(() =>
+    loadThreadMessages(getThreadIdFromUrl()),
+  );
 
-  // Session hook — subscribes to events for the active session
+  // Session hook — tracks the *latest* session for this thread
   const session = useSession({
-    sessionId: threadId ?? undefined,
     onEvent: (e) => {
       setSharedEvents((prev) => [...prev, e]);
     },
   });
 
-  // Chat hook — derives messages from events
-  const { messages } = useChat(session.sessionId, sharedEvents);
+  // Live messages from the event stream (multi-session if events were kept)
+  const { messages: liveMessages } = useChat(session.sessionId, sharedEvents);
 
-  // Agent state — for Reasoning/Steps display
+  // Prefer live messages once the stream has content; else hydrated snapshot
+  const messages =
+    liveMessages.length > 0 ? liveMessages : hydratedMessages;
+
+  // Agent state — for Reasoning/Steps display (latest turn)
   const agentState = useAgentState({ sharedEvents });
 
   const [input, setInput] = useState("");
@@ -187,31 +218,38 @@ export function AnvilPerplexity({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [threads, setThreads] = useState<ThreadMeta[]>(loadThreads);
+  const threadIdRef = useRef<string | null>(threadId);
+  threadIdRef.current = threadId;
 
   // ── Thread routing sync ──────────────────────────────────────
 
-  // When URL hash changes (back/forward, deep-link, new tab), update state.
+  // When URL hash changes (back/forward, deep-link), switch thread context.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const urlThread = getThreadIdFromUrl();
     if (urlThread !== threadId) {
       setSharedEvents([]);
       setThreadId(urlThread);
+      setHydratedMessages(loadThreadMessages(urlThread));
+      session.cancel();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typeof window !== "undefined" ? window.location.hash : null]);
 
   // Browser back/forward buttons
   useEffect(() => {
     const onPop = () => {
       const tid = getThreadIdFromUrl();
-      if (tid !== threadId) {
+      if (tid !== threadIdRef.current) {
         setSharedEvents([]);
         setThreadId(tid);
+        setHydratedMessages(loadThreadMessages(tid));
+        session.cancel();
       }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [threadId]);
+  }, [session]);
 
   // ── Auto-focus input when idle ───────────────────────────────
 
@@ -221,17 +259,19 @@ export function AnvilPerplexity({
     }
   }, [session.status]);
 
-  // ── Save thread when done ────────────────────────────────────
+  // ── Persist thread meta + message snapshot when a turn completes ──
 
   useEffect(() => {
-    if (session.status === "done" && session.sessionId && messages.length > 0) {
+    if (session.status === "done" && threadId && messages.length > 0) {
       const firstMsg = messages.find((m) => m.role === "user");
       if (firstMsg) {
-        saveThread(session.sessionId, firstMsg.content);
+        saveThread(threadId, firstMsg.content);
+        saveThreadMessages(threadId, messages);
         setThreads(loadThreads());
+        setHydratedMessages(messages);
       }
     }
-  }, [session.status, session.sessionId, messages]);
+  }, [session.status, threadId, messages]);
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -239,11 +279,17 @@ export function AnvilPerplexity({
     async (text: string) => {
       if (!text.trim()) return;
       setInput("");
-      setSharedEvents([]);
+      // CRITICAL: do NOT clear sharedEvents on follow-ups — that was
+      // wiping multi-turn history and forcing a brand-new "thread".
       try {
-        const sid = await session.start(text);
-        navigateToThread(sid);
-        setThreadId(sid);
+        const result = await session.start(
+          text,
+          threadIdRef.current ? { threadId: threadIdRef.current } : undefined,
+        );
+        const tid = result.threadId;
+        setThreadId(tid);
+        threadIdRef.current = tid;
+        navigateToThread(tid);
       } catch (err) {
         console.error("Failed to start session:", err);
       }
@@ -254,13 +300,19 @@ export function AnvilPerplexity({
   const newThread = useCallback(() => {
     navigateToHome();
     setThreadId(null);
+    threadIdRef.current = null;
     setSharedEvents([]);
+    setHydratedMessages([]);
     session.cancel();
     inputRef.current?.focus();
   }, [session]);
 
   const isRunning = session.status === "running" || session.status === "starting";
-  const showLanding = session.status === "idle" && messages.length === 0;
+  const showLanding =
+    !isRunning &&
+    session.status !== "error" &&
+    messages.length === 0 &&
+    sharedEvents.length === 0;
 
   return (
     <TooltipProvider>
@@ -342,6 +394,9 @@ export function AnvilPerplexity({
                         navigateToThread(t.id);
                         setSharedEvents([]);
                         setThreadId(t.id);
+                        threadIdRef.current = t.id;
+                        setHydratedMessages(loadThreadMessages(t.id));
+                        session.cancel();
                         setShowHistory(false);
                       }}
                     >
@@ -849,3 +904,6 @@ export type { ToolHandler, UseAgentOptions, UseAgentReturn, PendingInterrupt, Ag
 
 // Zero-config Agent UI
 export { AgentUI } from "./components/agent-ui";
+export { ChatUI } from "./components/chat-ui";
+export type { ChatUIProps } from "./components/chat-ui";
+export { AgentThinking, AgentThinkingInline } from "./components/agent-thinking";

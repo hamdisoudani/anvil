@@ -146,22 +146,58 @@ export function AgentThinking({
       {expanded && (
         <div className="space-y-3 pt-2 border-t">
           {state.plan && Array.isArray((state.plan as any).sub_queries) && (state.plan as any).sub_queries.length > 0 && (
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               {((state.plan as any).reason as string) && (
-                <p className="text-[10px] sm:text-xs text-muted-foreground">
-                  {String((state.plan as any).reason)}
-                </p>
+                <div className="rounded-md bg-muted/40 px-2.5 py-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                    Plan
+                  </p>
+                  <p className="text-xs sm:text-sm text-foreground/90 leading-relaxed">
+                    {String((state.plan as any).reason)}
+                  </p>
+                  {(state.plan as any).synthesize_hint && (
+                    <p className="mt-1.5 text-[11px] text-muted-foreground">
+                      Answer style: {String((state.plan as any).synthesize_hint)}
+                    </p>
+                  )}
+                </div>
               )}
-              <div className="flex flex-wrap gap-1">
-                {((state.plan as any).sub_queries as any[]).map((q: any, i: number) => (
-                  <Badge
-                    key={i}
-                    variant="secondary"
-                    className="text-[9px] sm:text-[10px]"
-                  >
-                    {String(q.query || q.intent || "")}
-                  </Badge>
-                ))}
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Search queries
+                </p>
+                <ul className="space-y-1.5">
+                  {((state.plan as any).sub_queries as any[]).map((q: any, i: number) => (
+                    <li
+                      key={q.id ?? i}
+                      className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-card px-2.5 py-2"
+                    >
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          {String(q.id ?? `q${i + 1}`)}
+                        </span>
+                        {q.source && (
+                          <Badge variant="outline" className="text-[9px] h-4 px-1.5">
+                            {String(q.source)}
+                          </Badge>
+                        )}
+                        {q.year ? (
+                          <Badge variant="secondary" className="text-[9px] h-4 px-1.5">
+                            {String(q.year)}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="text-xs sm:text-sm font-medium leading-snug break-words">
+                        {String(q.query || q.intent || "")}
+                      </p>
+                      {q.intent && q.query && q.intent !== q.query && (
+                        <p className="text-[11px] text-muted-foreground break-words">
+                          {String(q.intent)}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}

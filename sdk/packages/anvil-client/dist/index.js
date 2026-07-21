@@ -2,7 +2,7 @@
  * Anvil client — framework-agnostic.
  *
  * The client speaks the Anvil wire protocol:
- *   - POST /tasks                       start a session
+ *   - POST /tasks                       start a session (optionally continuing a thread_id)
  *   - GET  /sessions/:id/events         live stream (SSE)
  *   - GET  /sessions/:id/events?since=N resume from N
  *   - POST /sessions/:id/tool           deliver a frontend tool result
@@ -23,19 +23,33 @@ export class AnvilClient {
             baseUrl: config.baseUrl.replace(/\/$/, ""),
         };
     }
-    /** Start a new agent task. Returns the session id and stream URL. */
-    async startTask(task) {
+    /**
+     * Start a new agent task (optionally continuing an existing thread).
+     *
+     * Pass `opts.threadId` to continue an existing conversation thread;
+     * the server will create a fresh session bound to that thread and
+     * the new session's events will be appended to the thread's history.
+     *
+     * Returns the new sessionId, the threadId (echoed back; may equal the
+     * provided threadId or a fresh one if none was given), and the SSE
+     * stream URL for this session.
+     */
+    async startTask(task, opts) {
+        const body = { task, question: task };
+        if (opts?.threadId)
+            body.thread_id = opts.threadId;
         const r = await this.config.fetch(`${this.config.baseUrl}/tasks`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ task }),
+            body: JSON.stringify(body),
         });
         if (!r.ok)
             throw new Error(`startTask failed: ${r.status} ${await r.text()}`);
-        const body = (await r.json());
+        const json = (await r.json());
         return {
-            sessionId: body.session_id,
-            streamUrl: body.stream_url,
+            sessionId: json.session_id,
+            threadId: json.thread_id ?? json.session_id,
+            streamUrl: json.stream_url,
         };
     }
     /** Resume a paused session. */

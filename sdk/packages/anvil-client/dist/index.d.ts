@@ -2,7 +2,7 @@
  * Anvil client — framework-agnostic.
  *
  * The client speaks the Anvil wire protocol:
- *   - POST /tasks                       start a session
+ *   - POST /tasks                       start a session (optionally continuing a thread_id)
  *   - GET  /sessions/:id/events         live stream (SSE)
  *   - GET  /sessions/:id/events?since=N resume from N
  *   - POST /sessions/:id/tool           deliver a frontend tool result
@@ -58,9 +58,22 @@ export interface Subscription {
 export declare class AnvilClient {
     private config;
     constructor(config: ClientConfig);
-    /** Start a new agent task. Returns the session id and stream URL. */
-    startTask(task: string): Promise<{
+    /**
+     * Start a new agent task (optionally continuing an existing thread).
+     *
+     * Pass `opts.threadId` to continue an existing conversation thread;
+     * the server will create a fresh session bound to that thread and
+     * the new session's events will be appended to the thread's history.
+     *
+     * Returns the new sessionId, the threadId (echoed back; may equal the
+     * provided threadId or a fresh one if none was given), and the SSE
+     * stream URL for this session.
+     */
+    startTask(task: string, opts?: {
+        threadId?: string;
+    }): Promise<{
         sessionId: string;
+        threadId: string;
         streamUrl: string;
     }>;
     /** Resume a paused session. */

@@ -109,17 +109,25 @@ export interface UseAgentReturn {
   isDone: boolean;
   error: string | null;
 
-  // ── Session info ──
-  sessionId: string | null;
-  status: UseSessionResult["status"];
-
-  // ── Actions ──
-  /** Send a message to the agent */
-  send: (text: string) => Promise<string | void>;
+  /** Active conversation thread ID, if the server supplied one. */
+  threadId: string | null;
+  /**
+   * Send a message to the agent. Pass `threadId` to continue an
+   * existing multi-session conversation. Events remain in the shared
+   * log; call `reset()` to explicitly start a new thread.
+   */
+  send: (
+    text: string,
+    opts?: { threadId?: string },
+  ) => Promise<{ sessionId: string; threadId: string } | void>;
   /** Cancel the current agent run */
   cancel: () => void;
   /** Reset everything / start a new thread */
   reset: () => void;
+
+  // ── Session info ──
+  sessionId: string | null;
+  status: UseSessionResult["status"];
 
   // ── Interrupt / HITL ──
   /** The current interrupt waiting for user input, if any. */
@@ -228,38 +236,65 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   const error = agentState.error?.message ?? session.error?.message ?? null;
 
   // Store session methods in refs so callbacks don't depend on session object identity
-  const startRef = useRef<(text: string) => Promise<string | void>>();
+  const startRef = useRef<
+    (
+      task: string,
+      opts?: { threadId?: string },
+    ) => Promise<{ sessionId: string; threadId: string }>
+  >();
   const cancelRef = useRef<() => void>();
   useEffect(() => {
     startRef.current = session.start;
     cancelRef.current = session.cancel;
   }, [session.start, session.cancel]);
 
-  // Send: start a new run or continue
-  const send = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-    setSharedEvents([]);
-    setPendingInterrupt(null);
-    pendingInterruptRef.current = null;
-    try {
-      const sid = await startRef.current?.(text);
-      return sid;
-    } catch (err) {
-      console.error("useAgent.send failed:", err);
-      throw err;
-    }
-  }, []);
+  // Track the active thread ID in state so consumers re-render when it changes.
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const threadIdRef = useRef<string | null>(null);
+
+  // Send: start a new run or continue. When `opts.threadId` is given
+  // (or the previous run produced one), events from this session are
+  // APPENDED to the existing log so multi-turn history stays visible.
+  // Only an explicit `reset()` (or a brand-new thread) clears the log.
+  const send = useCallback(
+    async (
+      text: string,
+      opts?: { threadId?: string },
+    ): Promise<{ sessionId: string; threadId: string } | void> => {
+      if (!text.trim()) return;
+      const tid = opts?.threadId ?? threadIdRef.current ?? undefined;
+      // Always clear any leftover interrupt from a prior session before
+      // starting a new run. The shared event log is preserved across
+      // multi-turn messages in the same thread (we just append).
+      setPendingInterrupt(null);
+      pendingInterruptRef.current = null;
+      try {
+        const result = await startRef.current?.(text, tid ? { threadId: tid } : undefined);
+        if (result) {
+          threadIdRef.current = result.threadId;
+          setThreadId(result.threadId);
+        }
+        return result;
+      } catch (err) {
+        console.error("useAgent.send failed:", err);
+        throw err;
+      }
+    },
+    [],
+  );
 
   // Cancel
   const cancel = useCallback(() => {
     cancelRef.current?.();
   }, []);
 
-  // Reset: cancel + clear events
+  // Reset: cancel + clear events + forget thread
   const reset = useCallback(() => {
     setSharedEvents([]);
     setPendingInterrupt(null);
     pendingInterruptRef.current = null;
+    threadIdRef.current = null;
+    setThreadId(null);
     cancelRef.current?.();
   }, []);
 
@@ -287,6 +322,7 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
     isDone,
     error,
     sessionId: session.sessionId,
+    threadId,
     status: session.status,
     send,
     cancel,

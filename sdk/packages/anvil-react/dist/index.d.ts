@@ -33,4 +33,7 @@ export { ErrorBanner } from "./components/ai-elements/error-banner";
 export { useAgent } from "@anvil/react-headless";
 export type { ToolHandler, UseAgentOptions, UseAgentReturn, PendingInterrupt, AgentError } from "@anvil/react-headless";
 export { AgentUI } from "./components/agent-ui";
+export { ChatUI } from "./components/chat-ui";
+export type { ChatUIProps } from "./components/chat-ui";
+export { AgentThinking, AgentThinkingInline } from "./components/agent-thinking";
 //# sourceMappingURL=index.d.ts.map

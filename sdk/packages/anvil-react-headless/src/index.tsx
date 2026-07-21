@@ -591,8 +591,19 @@ export interface UseSessionResult {
   sessionId: string | null;
   status: "idle" | "starting" | "running" | "paused" | "done" | "error";
   error: Error | null;
-  /** Send a new task. Replaces any existing session. */
-  start: (task: string) => Promise<string>;
+  /**
+   * Start a new agent task. If `opts.threadId` is provided, the new
+   * session continues that thread (the server binds the new session
+   * to the thread and the SDK appends the new session's events to
+   * the existing shared event log, preserving prior chat history).
+   *
+   * Returns the new `sessionId` and the resolved `threadId`. If no
+   * threadId was supplied, the server-generated one is returned.
+   */
+  start: (
+    task: string,
+    opts?: { threadId?: string },
+  ) => Promise<{ sessionId: string; threadId: string }>;
   /** Resume a paused session. */
   resume: (sessionId: string) => Promise<string>;
   /** Cancel the current session (close the subscription). */
@@ -705,17 +716,23 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
   // start() and resume() set sessionId; the effect subscribes.
   // This eliminates the double-subscription bug (BUG-H1).
 
-  const start = useCallback(async (task: string) => {
+  const start = useCallback(async (
+    task: string,
+    opts?: { threadId?: string },
+  ) => {
     setStatus("starting");
     setError(null);
     try {
-      const { sessionId: newId } = await client.startTask(task);
+      const result = await client.startTask(task, opts);
       // Subscribe immediately AND set sessionId.
       // The sessionRef guard in subscribe() prevents the effect from
       // double-subscribing when sessionId changes.
-      setSessionId(newId);
-      subscribe(newId);
-      return newId;
+      setSessionId(result.sessionId);
+      subscribe(result.sessionId);
+      return {
+        sessionId: result.sessionId,
+        threadId: result.threadId,
+      };
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
       setStatus("error");
@@ -851,9 +868,12 @@ export function useChat(sessionId: string | null, events?: AnvilEvent[]) {
     for (const e of allEvents) {
       switch (e.type) {
         case "session.start": {
-          // Reset any pending state from a previous session
+          // New turn in this thread — clear per-turn transient state.
+          // Cumulative chat messages (out[]) are PRESERVED so multi-turn
+          // history stays visible. Only `currentAssistant` (which is
+          // already null after a prior `done`) and `pendingSources` reset.
           pendingSources = null;
-          // The user message is the task itself; emit it once.
+          // The user message is the task itself; emit it once per turn.
           const task = (e.payload as any)?.task as string | undefined;
           if (task) {
             out.push({
