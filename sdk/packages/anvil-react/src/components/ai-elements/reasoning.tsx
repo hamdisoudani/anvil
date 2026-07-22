@@ -5,10 +5,22 @@
  *
  * Behavior matches AI Elements: opens by default when streaming,
  * auto-collapses when isStreaming becomes false.
+ *
+ * Performance notes:
+ *  - Auto-open / auto-collapse is derived from props (no mirror state
+ *    and no effect) — eliminates an extra commit on every streaming flip.
+ *  - Context value is memoized so consumers don't re-render unless
+ *    `open` actually changes (clicking the trigger vs parent rerender).
  */
 import * as React from "react";
 import { cn } from "../../lib/utils";
 import { ChevronRight, Brain } from "lucide-react";
+
+type ReasoningCtx = {
+  open: boolean;
+  setOpen: (o: boolean) => void;
+  isStreaming: boolean;
+};
 
 interface ReasoningProps extends React.HTMLAttributes<HTMLDivElement> {
   isStreaming?: boolean;
@@ -22,22 +34,20 @@ export function Reasoning({
   children,
   ...props
 }: ReasoningProps) {
-  // Open by default when streaming; respect defaultOpen for static content
-  const [open, setOpen] = React.useState(defaultOpen);
-  const prevStreaming = React.useRef(isStreaming);
-  // Auto-open when streaming starts; auto-collapse when it ends
-  React.useEffect(() => {
-    if (prevStreaming.current !== isStreaming) {
-      if (isStreaming) {
-        setOpen(true);
-      } else {
-        setOpen(false);
-      }
-    }
-    prevStreaming.current = isStreaming;
-  }, [isStreaming]);
+  // Auto-open while streaming. Click override sticks (sticky user intent).
+  const [userOpen, setUserOpen] = React.useState<boolean | null>(null);
+  const open = userOpen ?? (isStreaming || defaultOpen);
+  const setOpen = React.useCallback((o: boolean) => setUserOpen(o), []);
+
+  // Memoized context — only changes when `open` flips. Consumers reading
+  // `isStreaming` won't re-render just because the parent rerendered.
+  const ctx = React.useMemo<ReasoningCtx>(
+    () => ({ open, setOpen, isStreaming }),
+    [open, setOpen, isStreaming],
+  );
+
   return (
-    <ReasoningContext.Provider value={{ open, setOpen, isStreaming }}>
+    <ReasoningContext.Provider value={ctx}>
       <div
         className={cn(
           "my-2 border border-muted/60 rounded-lg overflow-hidden",
@@ -51,11 +61,7 @@ export function Reasoning({
   );
 }
 
-const ReasoningContext = React.createContext<{
-  open: boolean;
-  setOpen: (o: boolean) => void;
-  isStreaming: boolean;
-} | null>(null);
+const ReasoningContext = React.createContext<ReasoningCtx | null>(null);
 
 function useReasoning() {
   const ctx = React.useContext(ReasoningContext);
@@ -67,7 +73,11 @@ interface ReasoningTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonEle
   title?: string;
 }
 
-export function ReasoningTrigger({ title = "Reasoning", className, ...props }: ReasoningTriggerProps) {
+export function ReasoningTrigger({
+  title = "Reasoning",
+  className,
+  ...props
+}: ReasoningTriggerProps) {
   const { open, setOpen, isStreaming } = useReasoning();
   return (
     <button
@@ -79,13 +89,23 @@ export function ReasoningTrigger({ title = "Reasoning", className, ...props }: R
       )}
       {...props}
     >
-      <Brain className={cn("h-3 w-3", isStreaming && "animate-pulse text-primary")} />
-      <span className="flex-1 text-left">
+      <Brain
+        className={cn(
+          "h-3 w-3 shrink-0",
+          isStreaming && "animate-pulse text-primary",
+        )}
+      />
+      <span className="flex-1 text-left truncate">
         {title}
-        {isStreaming && <span className="ml-1.5 text-primary">· thinking…</span>}
+        {isStreaming && (
+          <span className="ml-1.5 text-primary">· thinking…</span>
+        )}
       </span>
       <ChevronRight
-        className={cn("h-3 w-3 transition-transform", open && "rotate-90")}
+        className={cn(
+          "h-3 w-3 shrink-0 transition-transform",
+          open && "rotate-90",
+        )}
       />
     </button>
   );
@@ -93,7 +113,11 @@ export function ReasoningTrigger({ title = "Reasoning", className, ...props }: R
 
 interface ReasoningContentProps extends React.HTMLAttributes<HTMLDivElement> {}
 
-export function ReasoningContent({ className, children, ...props }: ReasoningContentProps) {
+export const ReasoningContent = React.memo(function ReasoningContent({
+  className,
+  children,
+  ...props
+}: ReasoningContentProps) {
   const { open } = useReasoning();
   if (!open) return null;
   return (
@@ -107,4 +131,4 @@ export function ReasoningContent({ className, children, ...props }: ReasoningCon
       {children}
     </div>
   );
-}
+});
