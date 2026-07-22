@@ -1,3 +1,8 @@
 perplexity-server
 *.env
 .env.local
+node_modules/
+.next/
+dist/
+out/
+chat_app_dist/

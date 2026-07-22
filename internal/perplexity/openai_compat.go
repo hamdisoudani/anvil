@@ -27,33 +27,84 @@ import (
 //	OPENAI_BASE_URL →  e.g. "https://integrate.api.nvidia.com/v1"
 //	OPENAI_MODEL    →  e.g. "meta/llama-3.1-70b-instruct"
 type OpenAICompatibleRouter struct {
-	APIKey  string
-	BaseURL string
-	Model   string
-	Client  *http.Client
+	APIKey      string
+	BaseURL     string
+	Model       string
+	Client      *http.Client
+	_OpenAIName string // provider label: "akarouter" | "ckey" | "vllm" | "openai-compatible"
 }
 
 // NewOpenAICompatibleRouter creates the router from env vars.
 // Defaults to NVIDIA NIM with Llama 3.1 70B (fast, smart, free tier).
+//
+// Named-provider aliases (preferred over OPENAI_* when set):
+//   - AKAROUTER_API_KEY / AKAROUTER_BASE_URL / AKAROUTER_MODEL  →  "akarouter"
+//   - VLLM_API_KEY     / VLLM_BASE_URL     / VLLM_MODEL        →  "vllm"
+//   - CKEY_API_KEY     / CKEY_BASE_URL     / CKEY_MODEL        →  "ckey"
 func NewOpenAICompatibleRouter() *OpenAICompatibleRouter {
-	base := os.Getenv("OPENAI_BASE_URL")
-	if base == "" {
-		base = "https://integrate.api.nvidia.com/v1"
-	}
-	model := os.Getenv("OPENAI_MODEL")
-	if model == "" {
-		model = "meta/llama-3.1-70b-instruct"
-	}
+	key, base, model, label := pickOpenAIProvider()
 	return &OpenAICompatibleRouter{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		APIKey:  key,
 		BaseURL: base,
 		Model:   model,
 		Client:  &http.Client{Timeout: 120 * time.Second},
+		// nameLabel is read by Name() via the package-level override below.
+		_OpenAIName: label,
 	}
 }
 
+// _OpenAIName is a sentinel field for the router's display label.
+// Stored on the struct so main.go can see "akarouter" vs "openai-compatible"
+// without changing the interface.
+const _OpenAINameKey = "_openaiName"
+
+// pickOpenAIProvider resolves which OpenAI-compatible provider to use.
+//
+// Precedence:
+//  1. AKAROUTER_API_KEY set → akarouter  (https://akarouter.dev/v1)
+//  2. CKEY_API_KEY     set → ckey        (https://ckey.vn/v1)
+//  3. VLLM_API_KEY     set → vllm        (https://ckey.vn/v1 — alias for ckey)
+//  4. OPENAI_API_KEY   set → "openai-compatible" (uses OPENAI_BASE_URL)
+func pickOpenAIProvider() (key, base, model, label string) {
+	switch {
+	case os.Getenv("AKAROUTER_API_KEY") != "":
+		key = os.Getenv("AKAROUTER_API_KEY")
+		base = envOr("AKAROUTER_BASE_URL", "https://akarouter.dev/v1")
+		model = envOr("AKAROUTER_MODEL", "akarouter/default")
+		label = "akarouter"
+	case os.Getenv("CKEY_API_KEY") != "":
+		key = os.Getenv("CKEY_API_KEY")
+		base = envOr("CKEY_BASE_URL", "https://ckey.vn/v1")
+		model = envOr("CKEY_MODEL", "deepseek-v4-flash-free")
+		label = "ckey"
+	case os.Getenv("VLLM_API_KEY") != "":
+		key = os.Getenv("VLLM_API_KEY")
+		base = envOr("VLLM_BASE_URL", "https://ckey.vn/v1")
+		model = envOr("VLLM_MODEL", "deepseek-v4-flash-free")
+		label = "vllm"
+	default:
+		key = os.Getenv("OPENAI_API_KEY")
+		base = envOr("OPENAI_BASE_URL", "https://integrate.api.nvidia.com/v1")
+		model = envOr("OPENAI_MODEL", "meta/llama-3.1-70b-instruct")
+		label = "openai-compatible"
+	}
+	return
+}
+
+func envOr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
 // Name implements the LLMRouter interface.
-func (r *OpenAICompatibleRouter) Name() string { return "openai-compatible" }
+func (r *OpenAICompatibleRouter) Name() string {
+	if r._OpenAIName != "" {
+		return r._OpenAIName
+	}
+	return "openai-compatible"
+}
 
 // openAIRequest is the wire format the OpenAI API expects.
 // Uses messages array format (no top-level 'system' field) for
