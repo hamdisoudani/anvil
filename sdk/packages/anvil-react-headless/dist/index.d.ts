@@ -207,6 +207,7 @@ export interface UseSessionOptions {
         callId: string;
         name: string;
         input: unknown;
+        isFrontend?: boolean;
     }) => Promise<unknown> | unknown;
     /** Auto-reconnect on disconnect (default: true). */
     autoReconnect?: boolean;

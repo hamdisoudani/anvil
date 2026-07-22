@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * @anvil/react-headless — React hooks for Anvil.
  *
@@ -581,8 +583,12 @@ export interface UseSessionOptions {
   /** Called on every event. */
   onEvent?: (e: AnvilEvent) => void;
   /** Called when a frontend tool call needs to be executed. */
-  onToolCall?: (call: { callId: string; name: string; input: unknown }) =>
-    Promise<unknown> | unknown;
+  onToolCall?: (call: {
+    callId: string;
+    name: string;
+    input: unknown;
+    isFrontend?: boolean;
+  }) => Promise<unknown> | unknown;
   /** Auto-reconnect on disconnect (default: true). */
   autoReconnect?: boolean;
 }
@@ -663,8 +669,15 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
       if (e.type === "tool.call") {
         const p = e.payload as { id: string; name: string; input: unknown; is_frontend?: boolean };
         if (p.is_frontend) {
-          // Map server's "id" to our "callId"
-          const call = { callId: p.id, name: p.name, input: p.input };
+          // Map server's "id" → callId and preserve is_frontend so
+          // useAgent can open a PendingInterrupt (HITL) when no local
+          // tool handler is registered.
+          const call = {
+            callId: p.id,
+            name: p.name,
+            input: p.input,
+            isFrontend: true as const,
+          };
           // Find executor
           const tool = getTool(p.name);
           const exec = onToolCallRef.current

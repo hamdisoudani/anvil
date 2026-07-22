@@ -1,3 +1,4 @@
+"use client";
 /**
  * useAgent — The ONE hook to build any Anvil agent UI.
  *
@@ -107,8 +108,8 @@ export function useAgent(options = {}) {
     const isDone = session.status === "done";
     const error = agentState.error?.message ?? session.error?.message ?? null;
     // Store session methods in refs so callbacks don't depend on session object identity
-    const startRef = useRef();
-    const cancelRef = useRef();
+    const startRef = useRef(null);
+    const cancelRef = useRef(null);
     useEffect(() => {
         startRef.current = session.start;
         cancelRef.current = session.cancel;

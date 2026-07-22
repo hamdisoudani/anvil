@@ -1,3 +1,4 @@
+"use client";
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /**
  * ErrorBanner — A severity-aware error display for Anvil agents.

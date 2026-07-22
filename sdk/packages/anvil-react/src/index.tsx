@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * AnvilPerplexity — v2.0
  *

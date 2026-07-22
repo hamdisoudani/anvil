@@ -3,12 +3,9 @@
 /**
  * Response — renders AI assistant text as Markdown.
  *
- * Uses `marked` (battle-tested CommonMark parser) instead of a homegrown
- * regex parser. Renders HTML, sanitized via a strict allowlist.
- *
- * The AI SDK ecosystem recommends `streamdown` for production, but it
- * pulls in additional deps and assumes the AI SDK. `marked` is
- * dependency-light and handles nested bold/italic/code correctly.
+ * Uses `marked` (CommonMark) + DOMPurify. DOMPurify is browser-only;
+ * during SSR / first paint we render a safe plain-text fallback so
+ * Next.js App Router never touches `window` on the server.
  */
 import * as React from "react";
 import { marked } from "marked";
@@ -19,18 +16,22 @@ interface ResponseProps extends React.HTMLAttributes<HTMLDivElement> {
   children: string;
 }
 
-// Configure marked for safe, streaming-friendly rendering.
 marked.setOptions({
   gfm: true,
   breaks: true,
   pedantic: false,
 });
 
-/**
- * Render markdown to safe HTML via marked + DOMPurify.
- */
 function renderMarkdown(text: string): string {
   if (!text) return "";
+  // DOMPurify needs a DOM — skip sanitize on the server.
+  if (typeof window === "undefined") {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br/>");
+  }
   const raw = marked.parse(text, { async: false }) as string;
   return DOMPurify.sanitize(raw, {
     USE_PROFILES: { html: true },
@@ -41,7 +42,17 @@ function renderMarkdown(text: string): string {
 }
 
 export function Response({ children, className, ...props }: ResponseProps) {
-  const html = React.useMemo(() => renderMarkdown(children), [children]);
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
+  const html = React.useMemo(
+    () => renderMarkdown(children),
+    // re-run after mount so we switch from plain-text SSR fallback to
+    // fully sanitized markdown once DOMPurify is available
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [children, mounted],
+  );
+
   return (
     <div
       className={cn(

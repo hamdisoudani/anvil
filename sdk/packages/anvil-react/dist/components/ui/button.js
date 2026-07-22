@@ -1,3 +1,4 @@
+"use client";
 import { jsx as _jsx } from "react/jsx-runtime";
 // shadcn/ui-style Button component. Built with cva for variants.
 import * as React from "react";

@@ -69,6 +69,21 @@ export interface ChatUIProps {
   emptyDescription?: string;
 }
 
+// ── Hooks ────────────────────────────────────────────────────────
+
+function useAutoResizeTextarea(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  value: string,
+  maxPx = 160,
+) {
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
+  }, [ref, value, maxPx]);
+}
+
 // ── Component ────────────────────────────────────────────────────
 
 export function ChatUI({
@@ -79,22 +94,44 @@ export function ChatUI({
   onNewThread,
   headerRight,
   emptyTitle = "What do you want to know?",
-  emptyDescription = "Ask a question — I'll search, read sources, and answer with citations.",
+  emptyDescription =
+    "Ask a question — I'll search, read sources, and answer with citations.",
 }: ChatUIProps) {
   const [input, setInput] = React.useState("");
+  const [sending, setSending] = React.useState(false);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  useAutoResizeTextarea(inputRef, input);
+
+  const busy = agent.isProcessing || sending;
 
   React.useEffect(() => {
-    if (!agent.isProcessing) inputRef.current?.focus();
-  }, [agent.isProcessing]);
+    if (!busy) inputRef.current?.focus();
+  }, [busy]);
+
+  const sendInThread = React.useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || agent.isProcessing || sending) return;
+      setSending(true);
+      try {
+        await agent.send(
+          trimmed,
+          agent.threadId ? { threadId: agent.threadId } : undefined,
+        );
+      } finally {
+        setSending(false);
+      }
+    },
+    [agent, sending],
+  );
 
   const submit = React.useCallback(async () => {
     const text = input.trim();
-    if (!text || agent.isProcessing) return;
+    if (!text || busy) return;
     setInput("");
-    await agent.send(text, agent.threadId ? { threadId: agent.threadId } : undefined);
-  }, [input, agent]);
+    await sendInThread(text);
+  }, [input, busy, sendInThread]);
 
   const handleNew = React.useCallback(() => {
     if (onNewThread) onNewThread();
@@ -103,7 +140,14 @@ export function ChatUI({
     inputRef.current?.focus();
   }, [onNewThread, agent]);
 
-  const showEmpty = agent.messages.length === 0 && !agent.isProcessing;
+  const retryLast = React.useCallback(() => {
+    const lastUser = [...agent.messages]
+      .reverse()
+      .find((m) => m.role === "user");
+    if (lastUser?.content) void sendInThread(lastUser.content);
+  }, [agent.messages, sendInThread]);
+
+  const showEmpty = agent.messages.length === 0 && !busy;
 
   return (
     <div
@@ -114,14 +158,21 @@ export function ChatUI({
     >
       {/* Header */}
       <header
-        className="flex h-12 sm:h-14 items-center justify-between border-b px-3 sm:px-4 shrink-0"
+        className="flex h-12 shrink-0 items-center justify-between border-b px-3 sm:h-14 sm:px-4"
         style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background shrink-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
             <Sparkles className="h-3.5 w-3.5" />
           </div>
-          <span className="text-sm font-semibold truncate">{title}</span>
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-semibold">{title}</span>
+            {agent.threadId && (
+              <span className="block truncate text-[10px] text-muted-foreground">
+                thread {agent.threadId.slice(0, 8)}…
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1">
           {headerRight}
@@ -129,28 +180,28 @@ export function ChatUI({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-10 min-w-10 sm:h-9 px-3 text-xs"
+            className="h-10 min-w-10 px-3 text-xs sm:h-9"
             onClick={handleNew}
           >
-            <Plus className="h-4 w-4 mr-1" />
+            <Plus className="mr-1 h-4 w-4" />
             <span className="hidden sm:inline">New chat</span>
           </Button>
         </div>
       </header>
 
       {/* Messages */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-hidden">
         <Conversation className="h-full">
           <ConversationContent>
             {showEmpty && (
-              <div className="flex flex-col items-center justify-center gap-3 py-16 sm:py-24 text-center px-4">
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center sm:py-24">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
                   <Sparkles className="h-5 w-5 text-muted-foreground" />
                 </div>
-                <h2 className="text-lg sm:text-xl font-semibold tracking-tight">
+                <h2 className="text-lg font-semibold tracking-tight sm:text-xl">
                   {emptyTitle}
                 </h2>
-                <p className="text-sm text-muted-foreground max-w-md">
+                <p className="max-w-md text-sm text-muted-foreground">
                   {emptyDescription}
                 </p>
               </div>
@@ -161,14 +212,12 @@ export function ChatUI({
                 key={msg.id}
                 msg={msg}
                 isLast={i === agent.messages.length - 1}
-                isProcessing={agent.isProcessing}
+                isProcessing={busy}
                 agent={agent}
                 showThinking={
                   msg.role === "assistant" &&
                   i > 0 &&
-                  agent.messages[i - 1]?.role === "user" &&
-                  (i === agent.messages.length - 1 ||
-                    agent.messages[i + 1]?.role === "user")
+                  agent.messages[i - 1]?.role === "user"
                 }
                 copiedId={copiedId}
                 onCopy={(id, content) => {
@@ -176,27 +225,22 @@ export function ChatUI({
                   setCopiedId(id);
                   setTimeout(() => setCopiedId(null), 1500);
                 }}
-                onRetry={() => {
-                  const lastUser = [...agent.messages]
-                    .reverse()
-                    .find((m) => m.role === "user");
-                  if (lastUser?.content) {
-                    void agent.send(
-                      lastUser.content,
-                      agent.threadId ? { threadId: agent.threadId } : undefined,
-                    );
-                  }
-                }}
+                onRetry={retryLast}
               />
             ))}
 
-            {agent.isProcessing &&
-              agent.messages.filter((m) => m.role === "assistant").length === 0 && (
+            {busy &&
+              agent.messages.filter((m) => m.role === "assistant").length ===
+                0 && (
                 <Message from="assistant">
                   <MessageAvatar name="AI" />
                   <MessageContent variant="flat">
                     <div className="space-y-2">
-                      <AgentThinking events={agent.events} defaultExpanded compact />
+                      <AgentThinking
+                        events={agent.events}
+                        defaultExpanded
+                        compact
+                      />
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Loader size={14} />
                         <span>Working…</span>
@@ -214,17 +258,7 @@ export function ChatUI({
                     severity: "error",
                     retryable: true,
                   }}
-                  onRetry={() => {
-                    const lastUser = [...agent.messages]
-                      .reverse()
-                      .find((m) => m.role === "user");
-                    if (lastUser?.content) {
-                      void agent.send(
-                        lastUser.content,
-                        agent.threadId ? { threadId: agent.threadId } : undefined,
-                      );
-                    }
-                  }}
+                  onRetry={retryLast}
                 />
               </div>
             )}
@@ -234,7 +268,7 @@ export function ChatUI({
 
       {/* Input */}
       <div
-        className="border-t bg-background shrink-0"
+        className="shrink-0 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 8px)" }}
       >
         <div className="p-2 sm:p-4">
@@ -245,7 +279,7 @@ export function ChatUI({
             }}
             className="mx-auto max-w-2xl lg:max-w-3xl"
           >
-            <Card className="rounded-2xl shadow-sm border">
+            <Card className="rounded-2xl border shadow-sm">
               <div className="flex items-end gap-2 p-2 sm:p-3">
                 <Textarea
                   ref={inputRef}
@@ -253,9 +287,9 @@ export function ChatUI({
                   onChange={(e) => setInput(e.target.value)}
                   placeholder={placeholder}
                   rows={1}
-                  disabled={agent.isProcessing}
+                  disabled={busy}
                   enterKeyHint="send"
-                  className="flex-1 min-h-[44px] max-h-40 resize-none border-0 shadow-none focus:outline-none bg-transparent px-2 text-base sm:text-sm leading-6 py-2.5"
+                  className="max-h-40 min-h-[44px] flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-base leading-6 shadow-none focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:text-sm"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -264,19 +298,15 @@ export function ChatUI({
                   }}
                 />
                 <Button
-                  type={agent.isProcessing ? "button" : "submit"}
+                  type={busy ? "button" : "submit"}
                   size="icon"
-                  variant={agent.isProcessing ? "destructive" : "default"}
-                  disabled={!agent.isProcessing && !input.trim()}
-                  onClick={
-                    agent.isProcessing
-                      ? () => agent.cancel()
-                      : undefined
-                  }
-                  className="h-11 w-11 sm:h-10 sm:w-10 rounded-full shrink-0 active:scale-95 transition-transform"
-                  aria-label={agent.isProcessing ? "Stop" : "Send"}
+                  variant={busy ? "destructive" : "default"}
+                  disabled={!busy && !input.trim()}
+                  onClick={busy ? () => agent.cancel() : undefined}
+                  className="h-11 w-11 shrink-0 rounded-full transition-transform active:scale-95 sm:h-10 sm:w-10"
+                  aria-label={busy ? "Stop" : "Send"}
                 >
-                  {agent.isProcessing ? (
+                  {busy ? (
                     <Square className="h-4 w-4 fill-current" />
                   ) : (
                     <ArrowUp className="h-5 w-5" />
@@ -284,7 +314,7 @@ export function ChatUI({
                 </Button>
               </div>
             </Card>
-            <p className="mt-2 text-center text-[10px] text-muted-foreground px-2">
+            <p className="mt-2 px-2 text-center text-[10px] text-muted-foreground">
               Anvil can make mistakes. Verify important info.
             </p>
           </form>
@@ -325,9 +355,7 @@ function ChatMessageRow({
   }
   if (msg.role === "tool") return null;
 
-  const sources = (msg as ChatMessage & {
-    sources?: Array<{ id: number; url: string; title: string; domain: string }>;
-  }).sources;
+  const sources = msg.sources;
   const streaming = isLast && isProcessing;
 
   return (
@@ -336,7 +364,10 @@ function ChatMessageRow({
       <MessageContent variant="flat">
         {showThinking && (
           <div className="mb-2">
-            {isLast && (agent.state.phase !== "idle" || agent.state.planSteps.length > 0) ? (
+            {isLast &&
+            (agent.state.phase !== "idle" ||
+              agent.state.planSteps.length > 0 ||
+              isProcessing) ? (
               <AgentThinking
                 events={agent.events}
                 defaultExpanded={streaming}
@@ -349,7 +380,11 @@ function ChatMessageRow({
                     title={`Plan (${agent.state.planSteps.length} steps)`}
                   />
                   <ReasoningContent>
-                    <AgentThinking events={agent.events} defaultExpanded compact />
+                    <AgentThinking
+                      events={agent.events}
+                      defaultExpanded
+                      compact
+                    />
                   </ReasoningContent>
                 </Reasoning>
               )
@@ -361,8 +396,15 @@ function ChatMessageRow({
           <div className="mt-1">
             <Response>{msg.content}</Response>
             {streaming && (
-              <span className="inline-block w-1.5 h-3.5 bg-foreground ml-0.5 animate-pulse align-text-bottom" />
+              <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-foreground align-text-bottom" />
             )}
+          </div>
+        )}
+
+        {!msg.content && streaming && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader size={14} />
+            <span>Thinking…</span>
           </div>
         )}
 

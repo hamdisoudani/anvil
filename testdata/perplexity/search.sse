@@ -1,0 +1,2087 @@
+event: ready
+data: {"session_id":"0ee55a06-38fa-41db-8dda-8913d427099e"}
+
+id: 1
+event: session.start
+data: {"type":"session.start","payload":{"focus":"","task":"latest Rust 1.90 release notes summary","thread_id":"2fd41edd-c7bd-48aa-b00b-7db820e8d204"}}
+
+id: 2
+event: plan.step
+data: {"type":"plan.step","payload":{"id":"plan","intent":"Planning the search","status":"running"}}
+
+id: 3
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"1 sub-queries","id":"plan","intent":"Plan built","status":"done"}}
+
+id: 4
+event: frontend.call
+data: {"type":"frontend.call","payload":{"input":{"needs_search":true,"reason":"User asks for the latest Rust 1.90 release notes, which requires up-to-date factual information.","sub_queries":[{"id":"q1","intent":"Retrieve the official Rust 1.90 release notes and summarize the main changes.","query":"Rust 1.90 release notes summary","source":"web","year":2026,"fetch_top":2}],"synthesize_hint":"Summarize the key new language features, compiler improvements, standard library updates, and any breaking changes from the Rust 1.90 release notes in a concise bullet list, and include a link to the official release notes page."},"name":"show_plan_step"}}
+
+id: 5
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"Query: Rust 1.90 release notes summary","id":"search-q1","intent":"Searching: Retrieve the official Rust 1.90 release notes and summarize the main changes.","status":"running"}}
+
+id: 6
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"Found 8 results for: Rust 1.90 release notes summary","id":"search-q1","intent":"Searching: Retrieve the official Rust 1.90 release notes and summarize the main changes.","status":"done"}}
+
+id: 7
+event: sources.found
+data: {"type":"sources.found","payload":{"sources":[{"id":1,"url":"https://www.youtube.com/watch?v=kEtNlTV14Ms","title":"What’s New in Rust 1.90? Full Breakdown","domain":"www.youtube.com","used":false},{"id":2,"url":"https://blog.rust-lang.org/2025/09/18/Rust-1.90.0","title":"Announcing Rust 1.90.0 | Rust Blog","domain":"blog.rust-lang.org","used":false},{"id":3,"url":"https://doc.rust-lang.org/beta/releases.html","title":"Rust Release Notes","domain":"doc.rust-lang.org","used":false},{"id":4,"url":"https://lwn.net/Articles/1038649","title":"Rust 1.90.0 released [LWN.net]","domain":"lwn.net","used":false},{"id":5,"url":"https://releases.rs/docs/1.90.0","title":"1.90.0 | Rust Changelogs","domain":"releases.rs","used":false},{"id":6,"url":"https://github.com/rust-lang/rust/releases","title":"Releases · rust-lang/rust · GitHub","domain":"github.com","used":false},{"id":7,"url":"https://www.reddit.com/r/rust/comments/1nk8mi2/rust_1900_is_out","title":"Rust 1.90.0 is out","domain":"www.reddit.com","used":false},{"id":8,"url":"https://releases.rs","title":"Rust Versions | Rust Changelogs","domain":"releases.rs","used":false}]}}
+
+id: 8
+event: frontend.call
+data: {"type":"frontend.call","payload":{"input":{"sources":[{"id":1,"url":"https://www.youtube.com/watch?v=kEtNlTV14Ms","title":"What’s New in Rust 1.90? Full Breakdown","domain":"www.youtube.com","used":false},{"id":2,"url":"https://blog.rust-lang.org/2025/09/18/Rust-1.90.0","title":"Announcing Rust 1.90.0 | Rust Blog","domain":"blog.rust-lang.org","used":false},{"id":3,"url":"https://doc.rust-lang.org/beta/releases.html","title":"Rust Release Notes","domain":"doc.rust-lang.org","used":false},{"id":4,"url":"https://lwn.net/Articles/1038649","title":"Rust 1.90.0 released [LWN.net]","domain":"lwn.net","used":false},{"id":5,"url":"https://releases.rs/docs/1.90.0","title":"1.90.0 | Rust Changelogs","domain":"releases.rs","used":false},{"id":6,"url":"https://github.com/rust-lang/rust/releases","title":"Releases · rust-lang/rust · GitHub","domain":"github.com","used":false},{"id":7,"url":"https://www.reddit.com/r/rust/comments/1nk8mi2/rust_1900_is_out","title":"Rust 1.90.0 is out","domain":"www.reddit.com","used":false},{"id":8,"url":"https://releases.rs","title":"Rust Versions | Rust Changelogs","domain":"releases.rs","used":false}]},"name":"render_sources"}}
+
+id: 9
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"https://www.youtube.com/watch?v=kEtNlTV14Ms","id":"fetch-0","intent":"Reading page","status":"running"}}
+
+id: 10
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"https://blog.rust-lang.org/2025/09/18/Rust-1.90.0","id":"fetch-1","intent":"Reading page","status":"running"}}
+
+id: 11
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"Read: ","id":"fetch-0","intent":"Reading page","status":"done"}}
+
+id: 12
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"Read: Announcing Rust 1.90.0 | Rust Blog","id":"fetch-1","intent":"Reading page","status":"done"}}
+
+id: 13
+event: plan.step
+data: {"type":"plan.step","payload":{"id":"synthesize","intent":"Writing the answer","status":"running"}}
+
+id: 14
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 15
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Rust"}}
+
+id: 16
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 17
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"1"}}
+
+id: 18
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 19
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"90"}}
+
+id: 20
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 21
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"0"}}
+
+id: 22
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" –"}}
+
+id: 23
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" key"}}
+
+id: 24
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" highlights"}}
+
+id: 25
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**\n\n"}}
+
+id: 26
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 27
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 28
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Compiler"}}
+
+id: 29
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/link"}}
+
+id: 30
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"er"}}
+
+id: 31
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**\n"}}
+
+id: 32
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 33
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 34
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 35
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"LL"}}
+
+id: 36
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"D"}}
+
+id: 37
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" is"}}
+
+id: 38
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" now"}}
+
+id: 39
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 40
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" default"}}
+
+id: 41
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" linker"}}
+
+id: 42
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 43
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" on"}}
+
+id: 44
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 45
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 46
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"x"}}
+
+id: 47
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"86"}}
+
+id: 48
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_"}}
+
+id: 49
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"64"}}
+
+id: 50
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 51
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"unknown"}}
+
+id: 52
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-linux"}}
+
+id: 53
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 54
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"gnu"}}
+
+id: 55
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 56
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" target"}}
+
+id: 57
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":","}}
+
+id: 58
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" giving"}}
+
+id: 59
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" faster"}}
+
+id: 60
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" link"}}
+
+id: 61
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" times"}}
+
+id: 62
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 63
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" large"}}
+
+id: 64
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" or"}}
+
+id: 65
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" heavily"}}
+
+id: 66
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 67
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"debug"}}
+
+id: 68
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ged"}}
+
+id: 69
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" binaries"}}
+
+id: 70
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" and"}}
+
+id: 71
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 72
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" incremental"}}
+
+id: 73
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" builds"}}
+
+id: 74
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 75
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 76
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" You"}}
+
+id: 77
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" can"}}
+
+id: 78
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" opt"}}
+
+id: 79
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 80
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"out"}}
+
+id: 81
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" with"}}
+
+id: 82
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 83
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 84
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"C"}}
+
+id: 85
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" linker"}}
+
+id: 86
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-fe"}}
+
+id: 87
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"atures"}}
+
+id: 88
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"=-"}}
+
+id: 89
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"lld"}}
+
+id: 90
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 91
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" or"}}
+
+id: 92
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" a"}}
+
+id: 93
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 94
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"R"}}
+
+id: 95
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"UST"}}
+
+id: 96
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"FLAGS"}}
+
+id: 97
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 98
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/"}}
+
+id: 99
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`."}}
+
+id: 100
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"cargo"}}
+
+id: 101
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/config"}}
+
+id: 102
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":".tom"}}
+
+id: 103
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"l"}}
+
+id: 104
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 105
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" entry"}}
+
+id: 106
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 107
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 108
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 109
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 110
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n\n"}}
+
+id: 111
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 112
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 113
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Cargo"}}
+
+id: 114
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**\n"}}
+
+id: 115
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 116
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 117
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 118
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Native"}}
+
+id: 119
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" workspace"}}
+
+id: 120
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" publishing"}}
+
+id: 121
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 122
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" –"}}
+
+id: 123
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 124
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"cargo"}}
+
+id: 125
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" publish"}}
+
+id: 126
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" --"}}
+
+id: 127
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"workspace"}}
+
+id: 128
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 129
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" now"}}
+
+id: 130
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" publishes"}}
+
+id: 131
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" every"}}
+
+id: 132
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" crate"}}
+
+id: 133
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" in"}}
+
+id: 134
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" a"}}
+
+id: 135
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" workspace"}}
+
+id: 136
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" in"}}
+
+id: 137
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 138
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" correct"}}
+
+id: 139
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" dependency"}}
+
+id: 140
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" order"}}
+
+id: 141
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":","}}
+
+id: 142
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" with"}}
+
+id: 143
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" full"}}
+
+id: 144
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" verification"}}
+
+id: 145
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" ("}}
+
+id: 146
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"including"}}
+
+id: 147
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" dry"}}
+
+id: 148
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 149
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"run"}}
+
+id: 150
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":")"}}
+
+id: 151
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" performed"}}
+
+id: 152
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" across"}}
+
+id: 153
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 154
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" whole"}}
+
+id: 155
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" set"}}
+
+id: 156
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 157
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 158
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 159
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 160
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n\n"}}
+
+id: 161
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 162
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 163
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Platform"}}
+
+id: 164
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" support"}}
+
+id: 165
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**\n"}}
+
+id: 166
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 167
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 168
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 169
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 170
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"x"}}
+
+id: 171
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"86"}}
+
+id: 172
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_"}}
+
+id: 173
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"64"}}
+
+id: 174
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 175
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"apple"}}
+
+id: 176
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-d"}}
+
+id: 177
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ar"}}
+
+id: 178
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"win"}}
+
+id: 179
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 180
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" dem"}}
+
+id: 181
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"oted"}}
+
+id: 182
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 183
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" Tier"}}
+
+id: 184
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 185
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 186
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 187
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" ("}}
+
+id: 188
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"host"}}
+
+id: 189
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 190
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"tools"}}
+
+id: 191
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":")."}}
+
+id: 192
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 193
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" The"}}
+
+id: 194
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" target"}}
+
+id: 195
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" still"}}
+
+id: 196
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" builds"}}
+
+id: 197
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":","}}
+
+id: 198
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" but"}}
+
+id: 199
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" it"}}
+
+id: 200
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" is"}}
+
+id: 201
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" no"}}
+
+id: 202
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" longer"}}
+
+id: 203
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" guaranteed"}}
+
+id: 204
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 205
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" pass"}}
+
+id: 206
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 207
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" full"}}
+
+id: 208
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" test"}}
+
+id: 209
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" suite"}}
+
+id: 210
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":","}}
+
+id: 211
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" which"}}
+
+id: 212
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" may"}}
+
+id: 213
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" lead"}}
+
+id: 214
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 215
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" future"}}
+
+id: 216
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" compatibility"}}
+
+id: 217
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" regress"}}
+
+id: 218
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ions"}}
+
+id: 219
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 220
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 221
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 222
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 223
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n\n"}}
+
+id: 224
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 225
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 226
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"St"}}
+
+id: 227
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"abil"}}
+
+id: 228
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ized"}}
+
+id: 229
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" language"}}
+
+id: 230
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" /"}}
+
+id: 231
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" standard"}}
+
+id: 232
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 233
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"library"}}
+
+id: 234
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" APIs"}}
+
+id: 235
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**\n"}}
+
+id: 236
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 237
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 238
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 239
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Signed"}}
+
+id: 240
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 241
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"integer"}}
+
+id: 242
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" subtraction"}}
+
+id: 243
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" helpers"}}
+
+id: 244
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 245
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" are"}}
+
+id: 246
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" now"}}
+
+id: 247
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" stable"}}
+
+id: 248
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":":"}}
+
+id: 249
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"  \n"}}
+
+id: 250
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"   "}}
+
+id: 251
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 252
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"u"}}
+
+id: 253
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"{"}}
+
+id: 254
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"n"}}
+
+id: 255
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"}"}}
+
+id: 256
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"::"}}
+
+id: 257
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"checked"}}
+
+id: 258
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_sub"}}
+
+id: 259
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_signed"}}
+
+id: 260
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`,"}}
+
+id: 261
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 262
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"u"}}
+
+id: 263
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"{"}}
+
+id: 264
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"n"}}
+
+id: 265
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"}"}}
+
+id: 266
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"::"}}
+
+id: 267
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"overflow"}}
+
+id: 268
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ing"}}
+
+id: 269
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_sub"}}
+
+id: 270
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_signed"}}
+
+id: 271
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`,"}}
+
+id: 272
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 273
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"u"}}
+
+id: 274
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"{"}}
+
+id: 275
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"n"}}
+
+id: 276
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"}"}}
+
+id: 277
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"::"}}
+
+id: 278
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"s"}}
+
+id: 279
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"atur"}}
+
+id: 280
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ating"}}
+
+id: 281
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_sub"}}
+
+id: 282
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_signed"}}
+
+id: 283
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`,"}}
+
+id: 284
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 285
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"u"}}
+
+id: 286
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"{"}}
+
+id: 287
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"n"}}
+
+id: 288
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"}"}}
+
+id: 289
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"::"}}
+
+id: 290
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"wr"}}
+
+id: 291
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"apping"}}
+
+id: 292
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_sub"}}
+
+id: 293
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_signed"}}
+
+id: 294
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`."}}
+
+id: 295
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 296
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 297
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 298
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n"}}
+
+id: 299
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 300
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 301
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 302
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Traits"}}
+
+id: 303
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 304
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" error"}}
+
+id: 305
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" handling"}}
+
+id: 306
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 307
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":":"}}
+
+id: 308
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 309
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"impl"}}
+
+id: 310
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" Copy"}}
+
+id: 311
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 312
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" Int"}}
+
+id: 313
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Error"}}
+
+id: 314
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Kind"}}
+
+id: 315
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 316
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" and"}}
+
+id: 317
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 318
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"impl"}}
+
+id: 319
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" Hash"}}
+
+id: 320
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 321
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" Int"}}
+
+id: 322
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Error"}}
+
+id: 323
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Kind"}}
+
+id: 324
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`."}}
+
+id: 325
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 326
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 327
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 328
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n"}}
+
+id: 329
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 330
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 331
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 332
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"C"}}
+
+id: 333
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 334
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"string"}}
+
+id: 335
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" comparisons"}}
+
+id: 336
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 337
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":":"}}
+
+id: 338
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 339
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Partial"}}
+
+id: 340
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Eq"}}
+
+id: 341
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"\u003c\u0026"}}
+
+id: 342
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"C"}}
+
+id: 343
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Str"}}
+
+id: 344
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"\u003e`"}}
+
+id: 345
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 346
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 347
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"C"}}
+
+id: 348
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Str"}}
+
+id: 349
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`,"}}
+
+id: 350
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 351
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"CString"}}
+
+id: 352
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`,"}}
+
+id: 353
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" and"}}
+
+id: 354
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 355
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Cow"}}
+
+id: 356
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"\u003cC"}}
+
+id: 357
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Str"}}
+
+id: 358
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"\u003e`"}}
+
+id: 359
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" ("}}
+
+id: 360
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"and"}}
+
+id: 361
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 362
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" symmetric"}}
+
+id: 363
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" implementations"}}
+
+id: 364
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":")."}}
+
+id: 365
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 366
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 367
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 368
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n"}}
+
+id: 369
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 370
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 371
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 372
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Const"}}
+
+id: 373
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 374
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"context"}}
+
+id: 375
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" stabilization"}}
+
+id: 376
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 377
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 378
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" many"}}
+
+id: 379
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" core"}}
+
+id: 380
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" methods"}}
+
+id: 381
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":":"}}
+
+id: 382
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"  \n"}}
+
+id: 383
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"   "}}
+
+id: 384
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" –"}}
+
+id: 385
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" Slice"}}
+
+id: 386
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" reversal"}}
+
+id: 387
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":":"}}
+
+id: 388
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `\u003c"}}
+
+id: 389
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 390
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"T"}}
+
+id: 391
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]"}}
+
+id: 392
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"\u003e::"}}
+
+id: 393
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"reverse"}}
+
+id: 394
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 395
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"  \n"}}
+
+id: 396
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"   "}}
+
+id: 397
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" –"}}
+
+id: 398
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" Floating"}}
+
+id: 399
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 400
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"point"}}
+
+id: 401
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" math"}}
+
+id: 402
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":":"}}
+
+id: 403
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 404
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"f"}}
+
+id: 405
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"32"}}
+
+id: 406
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"::"}}
+
+id: 407
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"floor"}}
+
+id: 408
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/"}}
+
+id: 409
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ceil"}}
+
+id: 410
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/tr"}}
+
+id: 411
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"unc"}}
+
+id: 412
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/fr"}}
+
+id: 413
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"act"}}
+
+id: 414
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/"}}
+
+id: 415
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"round"}}
+
+id: 416
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/"}}
+
+id: 417
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"round"}}
+
+id: 418
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_t"}}
+
+id: 419
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ies"}}
+
+id: 420
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"_even"}}
+
+id: 421
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`"}}
+
+id: 422
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" and"}}
+
+id: 423
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 424
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" same"}}
+
+id: 425
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" for"}}
+
+id: 426
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" `"}}
+
+id: 427
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"f"}}
+
+id: 428
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"64"}}
+
+id: 429
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"`."}}
+
+id: 430
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 431
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 432
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 433
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n\n"}}
+
+id: 434
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 435
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" **"}}
+
+id: 436
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Potential"}}
+
+id: 437
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" breaking"}}
+
+id: 438
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" change"}}
+
+id: 439
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**\n"}}
+
+id: 440
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 441
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" *"}}
+
+id: 442
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" The"}}
+
+id: 443
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" default"}}
+
+id: 444
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" switch"}}
+
+id: 445
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 446
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" L"}}
+
+id: 447
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"LD"}}
+
+id: 448
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" may"}}
+
+id: 449
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" expose"}}
+
+id: 450
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" linker"}}
+
+id: 451
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 452
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"specific"}}
+
+id: 453
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" issues"}}
+
+id: 454
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" on"}}
+
+id: 455
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" some"}}
+
+id: 456
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" projects"}}
+
+id: 457
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":";"}}
+
+id: 458
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 459
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" opt"}}
+
+id: 460
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"‑"}}
+
+id: 461
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"out"}}
+
+id: 462
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" flag"}}
+
+id: 463
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" is"}}
+
+id: 464
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" provided"}}
+
+id: 465
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 466
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" revert"}}
+
+id: 467
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 468
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 469
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" previous"}}
+
+id: 470
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" B"}}
+
+id: 471
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"FD"}}
+
+id: 472
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" linker"}}
+
+id: 473
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 474
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 475
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 476
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 477
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]\n\n"}}
+
+id: 478
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 479
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Link"}}
+
+id: 480
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 481
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 482
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" official"}}
+
+id: 483
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" release"}}
+
+id: 484
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" notes"}}
+
+id: 485
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"**"}}
+
+id: 486
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":":"}}
+
+id: 487
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" \u003c"}}
+
+id: 488
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"https"}}
+
+id: 489
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"://"}}
+
+id: 490
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"blog"}}
+
+id: 491
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":".r"}}
+
+id: 492
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ust"}}
+
+id: 493
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-lang"}}
+
+id: 494
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":".org"}}
+
+id: 495
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/"}}
+
+id: 496
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"202"}}
+
+id: 497
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"5"}}
+
+id: 498
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/"}}
+
+id: 499
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"09"}}
+
+id: 500
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/"}}
+
+id: 501
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"18"}}
+
+id: 502
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"/R"}}
+
+id: 503
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ust"}}
+
+id: 504
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"-"}}
+
+id: 505
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"1"}}
+
+id: 506
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 507
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"90"}}
+
+id: 508
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 509
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"0"}}
+
+id: 510
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"\u003e"}}
+
+id: 511
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" "}}
+
+id: 512
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"["}}
+
+id: 513
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"2"}}
+
+id: 514
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"]"}}
+
+id: 515
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"1799 chars","id":"synthesize","intent":"Writing the answer","status":"done"}}
+
+id: 516
+event: plan.step
+data: {"type":"plan.step","payload":{"id":"related","intent":"Generating related questions","status":"running"}}
+
+id: 517
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"0 questions","id":"related","intent":"Generating related questions","status":"done"}}
+
+id: 518
+event: frontend.call
+data: {"type":"frontend.call","payload":{"input":{"questions":[]},"name":"show_related"}}
+
+id: 519
+event: plan.step
+data: {"type":"plan.step","payload":{"id":"done","intent":"Done","status":"done"}}
+
+id: 520
+event: done
+data: {"type":"done","payload":{"answer":"**Rust 1.90.0 – key highlights**\n\n- **Compiler/linker**\n  * **LLD is now the default linker** on the `x86_64-unknown-linux-gnu` target, giving faster link times for large or heavily‑debugged binaries and for incremental builds.  You can opt‑out with `-C linker-features=-lld` or a `RUSTFLAGS`/`.cargo/config.toml` entry. [2]\n\n- **Cargo**\n  * **Native workspace publishing** – `cargo publish --workspace` now publishes every crate in a workspace in the correct dependency order, with full verification (including dry‑run) performed across the whole set. [2]\n\n- **Platform support**\n  * **`x86_64-apple-darwin` demoted to Tier 2** (host‑tools).  The target still builds, but it is no longer guaranteed to pass the full test suite, which may lead to future compatibility regressions. [2]\n\n- **Stabilized language / standard‑library APIs**\n  * **Signed‑integer subtraction helpers** are now stable:  \n    `u{n}::checked_sub_signed`, `u{n}::overflowing_sub_signed`, `u{n}::saturating_sub_signed`, `u{n}::wrapping_sub_signed`. [2]\n  * **Traits for error handling**: `impl Copy for IntErrorKind` and `impl Hash for IntErrorKind`. [2]\n  * **C‑string comparisons**: `PartialEq\u003c\u0026CStr\u003e` for `CStr`, `CString`, and `Cow\u003cCStr\u003e` (and the symmetric implementations). [2]\n  * **Const‑context stabilization** for many core methods:  \n    – Slice reversal: `\u003c[T]\u003e::reverse`  \n    – Floating‑point math: `f32::floor/ceil/trunc/fract/round/round_ties_even` and the same for `f64`. [2]\n\n- **Potential breaking change**\n  * The default switch to LLD may expose linker‑specific issues on some projects; the opt‑out flag is provided to revert to the previous BFD linker. [2]\n\n**Link to the official release notes**: \u003chttps://blog.rust-lang.org/2025/09/18/Rust-1.90.0\u003e [2]","plan":null,"related":[],"session_id":"0ee55a06-38fa-41db-8dda-8913d427099e","sources":[{"id":1,"url":"https://www.youtube.com/watch?v=kEtNlTV14Ms","title":"What’s New in Rust 1.90? Full Breakdown","domain":"www.youtube.com","used":false},{"id":2,"url":"https://blog.rust-lang.org/2025/09/18/Rust-1.90.0","title":"Announcing Rust 1.90.0 | Rust Blog","domain":"blog.rust-lang.org","used":true},{"id":3,"url":"https://doc.rust-lang.org/beta/releases.html","title":"Rust Release Notes","domain":"doc.rust-lang.org","used":false},{"id":4,"url":"https://lwn.net/Articles/1038649","title":"Rust 1.90.0 released [LWN.net]","domain":"lwn.net","used":false},{"id":5,"url":"https://releases.rs/docs/1.90.0","title":"1.90.0 | Rust Changelogs","domain":"releases.rs","used":false},{"id":6,"url":"https://github.com/rust-lang/rust/releases","title":"Releases · rust-lang/rust · GitHub","domain":"github.com","used":false},{"id":7,"url":"https://www.reddit.com/r/rust/comments/1nk8mi2/rust_1900_is_out","title":"Rust 1.90.0 is out","domain":"www.reddit.com","used":false},{"id":8,"url":"https://releases.rs","title":"Rust Versions | Rust Changelogs","domain":"releases.rs","used":false}],"thread_id":"2fd41edd-c7bd-48aa-b00b-7db820e8d204"}}
+
+: keepalive
+
+: keepalive
+

@@ -1,3 +1,4 @@
+"use client";
 import { jsx as _jsx } from "react/jsx-runtime";
 /**
  * @anvil/react-headless — React hooks for Anvil.
@@ -376,8 +377,15 @@ export function useSession(opts = {}) {
             if (e.type === "tool.call") {
                 const p = e.payload;
                 if (p.is_frontend) {
-                    // Map server's "id" to our "callId"
-                    const call = { callId: p.id, name: p.name, input: p.input };
+                    // Map server's "id" → callId and preserve is_frontend so
+                    // useAgent can open a PendingInterrupt (HITL) when no local
+                    // tool handler is registered.
+                    const call = {
+                        callId: p.id,
+                        name: p.name,
+                        input: p.input,
+                        isFrontend: true,
+                    };
                     // Find executor
                     const tool = getTool(p.name);
                     const exec = onToolCallRef.current

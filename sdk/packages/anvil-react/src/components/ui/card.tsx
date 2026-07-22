@@ -1,3 +1,5 @@
+"use client";
+
 // shadcn/ui-style Card component family.
 import * as React from "react";
 import { cn } from "../../lib/utils";

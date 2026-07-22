@@ -1,6 +1,6 @@
 {
   "name": "@anvil/react-headless",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "React hooks for Anvil — bring your own UI",
   "license": "MIT",
   "type": "module",
@@ -8,11 +8,15 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "echo 'no tests yet' && exit 0",
@@ -20,12 +24,14 @@
     "lint": "echo 'no linter yet' && exit 0"
   },
   "peerDependencies": {
-    "react": ">=18"
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
   },
   "dependencies": {
     "@anvil/client": "workspace:*"
   },
   "devDependencies": {
-    "@types/react": "^18.2.0"
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "anvil-sdk",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Anvil agent engine + React SDK — TypeScript workspace",
   "workspaces": [
@@ -16,18 +16,13 @@
     "publish": "pnpm -r publish"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "typescript": "^5.4.0"
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.9.0"
   },
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.395.0",
-    "marked": "^18.0.6",
-    "tailwind-merge": "^2.6.1"
-  }
+  "packageManager": "pnpm@9.15.0"
 }

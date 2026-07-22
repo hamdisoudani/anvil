@@ -1,3 +1,5 @@
+"use client";
+
 // shadcn/ui-style Badge component.
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";

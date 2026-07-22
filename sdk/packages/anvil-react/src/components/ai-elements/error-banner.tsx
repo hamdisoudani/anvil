@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * ErrorBanner — A severity-aware error display for Anvil agents.
  *

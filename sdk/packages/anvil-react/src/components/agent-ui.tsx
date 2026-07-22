@@ -1,24 +1,23 @@
 "use client";
 
 /**
- * AgentUI — A zero-config, fully working agent UI.
+ * AgentUI — Zero-config, production chat surface for Anvil.
  *
- * Just pass the return value of useAgent() and it renders the
- * entire chat interface: messages, thinking state, sources,
- * streaming text, input box, action buttons.
+ * Pass the return value of useAgent() and get:
+ * - Thread-aware multi-turn send (reuses agent.threadId)
+ * - Streaming markdown answers
+ * - Live thinking / plan steps
+ * - Sources + related questions
+ * - HITL interrupt dialogs
+ * - Mobile-safe composer (native textarea, safe-area, ≥44px targets)
  *
  * Example:
  * ```tsx
- * function App() {
- *   const agent = useAgent({ url: "/api/agent" });
- *   return <AgentUI agent={agent} />;
- * }
+ * const agent = useAgent({ url: "/api/agent" });
+ * return <AgentUI agent={agent} />;
  * ```
- *
- * Fully customizable via slots/children (coming soon).
  */
 import * as React from "react";
-import { useState as useStateFn } from "react";
 import { cn } from "../lib/utils";
 import {
   Message,
@@ -47,6 +46,7 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Textarea } from "./ui/input";
 import { ErrorBanner } from "./ai-elements/error-banner";
+import { AgentThinking } from "./agent-thinking";
 import {
   ArrowUp,
   Sparkles,
@@ -56,10 +56,14 @@ import {
   RotateCw,
   Check,
   Bot,
-  User,
-  Globe,
+  Square,
 } from "lucide-react";
-import type { UseAgentReturn, AgentState, PendingInterrupt } from "@anvil/react-headless";
+import type {
+  UseAgentReturn,
+  AgentState,
+  PendingInterrupt,
+  ChatMessage,
+} from "@anvil/react-headless";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -75,309 +79,514 @@ function getActivityText(state: AgentState): string {
   return state.phase;
 }
 
-// ── Interrupt Dialog Component ──────────────────────────────────
+function useAutoResizeTextarea(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  value: string,
+  maxPx = 160,
+) {
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
+  }, [ref, value, maxPx]);
+}
 
-function InterruptDialog({ interrupt, onApprove, onReject }: {
+// ── Interrupt Dialog ─────────────────────────────────────────────
+
+function InterruptDialog({
+  interrupt,
+  onApprove,
+  onReject,
+}: {
   interrupt: PendingInterrupt;
   onApprove: (result: any) => void;
   onReject: () => void;
 }) {
-  // ALL hooks at top level — NEVER conditional (Rules of Hooks)
   const [selected, setSelected] = React.useState(0);
   const [formData, setFormData] = React.useState<Record<string, string>>({});
   const input = interrupt.input || {};
 
-  const isApproval = input.reason === "approval" || interrupt.toolName.includes("approve");
+  const isApproval =
+    input.reason === "approval" || interrupt.toolName.includes("approve");
   const isChoice = input.reason === "choice" || !!input.options;
   const isInput = input.reason === "input" || !!input.schema;
 
-  // ── Approval ──
   if (isApproval) {
     return (
-      <Card className="mx-auto max-w-md rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-4 my-4">
-        <p className="text-sm font-medium mb-1">{input.title || "Approval required"}</p>
-        <p className="text-xs sm:text-sm text-muted-foreground mb-3">{input.message || interrupt.toolName}</p>
-        <div className="flex gap-2 justify-end">
-          <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
-          <Button size="sm" onClick={() => onApprove({ approved: true })}>Continue</Button>
+      <Card className="mx-auto my-4 max-w-md rounded-xl border-2 border-amber-500/30 bg-amber-500/5 p-4">
+        <p className="mb-1 text-sm font-medium">
+          {input.title || "Approval required"}
+        </p>
+        <p className="mb-3 text-xs text-muted-foreground sm:text-sm">
+          {input.message || interrupt.toolName}
+        </p>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onReject}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={() => onApprove({ approved: true })}>
+            Continue
+          </Button>
         </div>
       </Card>
     );
   }
 
-  // ── Choice ──
   if (isChoice) {
     return (
-      <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
-        <p className="text-sm font-medium mb-2">{input.title || "Select an option"}</p>
-        <div className="flex flex-wrap gap-2 mb-3">
+      <Card className="mx-auto my-4 max-w-md rounded-xl border p-4">
+        <p className="mb-2 text-sm font-medium">
+          {input.title || "Select an option"}
+        </p>
+        <div className="mb-3 flex flex-wrap gap-2">
           {(input.options || []).map((opt: string, i: number) => (
-            <Button key={i} variant={selected === i ? "default" : "outline"} size="sm" onClick={() => setSelected(i)}>
+            <Button
+              key={i}
+              variant={selected === i ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelected(i)}
+            >
               {opt}
             </Button>
           ))}
         </div>
-        <div className="flex gap-2 justify-end">
-          <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
-          <Button size="sm" onClick={() => onApprove({ selected })}>Select</Button>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onReject}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={() => onApprove({ selected })}>
+            Select
+          </Button>
         </div>
       </Card>
     );
   }
 
-  // ── Input/form ──
   if (isInput) {
     return (
-      <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
-        <p className="text-sm font-medium mb-2">{input.title || "Input required"}</p>
-        {input.schema?.properties && Object.keys(input.schema.properties).map((key) => (
-          <div key={key} className="mb-2">
-            <label className="text-[11px] text-muted-foreground">{key}</label>
-            <Textarea
-              className="min-h-[32px] text-xs"
-              placeholder={input.schema.properties[key]?.description || key}
-              value={formData[key] ?? ""}
-              onChange={(e) => setFormData(prev => ({ ...prev, [key]: e.target.value }))}
-            />
-          </div>
-        ))}
-        <div className="flex gap-2 justify-end mt-2">
-          <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
-          <Button size="sm" onClick={() => onApprove(formData)}>Submit</Button>
+      <Card className="mx-auto my-4 max-w-md rounded-xl border p-4">
+        <p className="mb-2 text-sm font-medium">
+          {input.title || "Input required"}
+        </p>
+        {input.schema?.properties &&
+          Object.keys(input.schema.properties).map((key) => (
+            <div key={key} className="mb-2">
+              <label className="text-[11px] text-muted-foreground">{key}</label>
+              <Textarea
+                className="min-h-[44px] text-sm"
+                placeholder={
+                  input.schema.properties[key]?.description || key
+                }
+                value={formData[key] ?? ""}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, [key]: e.target.value }))
+                }
+              />
+            </div>
+          ))}
+        <div className="mt-2 flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onReject}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={() => onApprove(formData)}>
+            Submit
+          </Button>
         </div>
       </Card>
     );
   }
 
-  // ── Generic fallback ──
   return (
-    <Card className="mx-auto max-w-md rounded-xl border p-4 my-4">
-      <p className="text-sm font-medium mb-1">Agent needs input</p>
-      <p className="text-xs text-muted-foreground mb-3">Tool: {interrupt.toolName}</p>
-      <pre className="text-[10px] bg-muted/50 rounded p-2 mb-3 overflow-x-auto max-h-32">{JSON.stringify(input, null, 2)}</pre>
-      <div className="flex gap-2 justify-end">
-        <Button variant="outline" size="sm" onClick={onReject}>Cancel</Button>
-        <Button size="sm" onClick={() => onApprove({})}>Continue</Button>
+    <Card className="mx-auto my-4 max-w-md rounded-xl border p-4">
+      <p className="mb-1 text-sm font-medium">Agent needs input</p>
+      <p className="mb-3 text-xs text-muted-foreground">
+        Tool: {interrupt.toolName}
+      </p>
+      <pre className="mb-3 max-h-32 overflow-x-auto rounded bg-muted/50 p-2 text-[10px]">
+        {JSON.stringify(input, null, 2)}
+      </pre>
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={onReject}>
+          Cancel
+        </Button>
+        <Button size="sm" onClick={() => onApprove({})}>
+          Continue
+        </Button>
       </div>
     </Card>
   );
 }
 
-// ── Main Component ──────────────────────────────────────────────
+// ── Message row ──────────────────────────────────────────────────
+
+function MessageRow({
+  msg,
+  index,
+  messages,
+  agent,
+  renderTool,
+  onSend,
+  onRetry,
+}: {
+  msg: ChatMessage;
+  index: number;
+  messages: ChatMessage[];
+  agent: UseAgentReturn;
+  renderTool: Record<string, (data: any) => React.ReactNode>;
+  onSend: (text: string) => void;
+  onRetry: () => void;
+}) {
+  const isLast = index === messages.length - 1;
+  const streaming = isLast && agent.isProcessing && msg.role === "assistant";
+  const showThinking =
+    msg.role === "assistant" &&
+    index > 0 &&
+    messages[index - 1]?.role === "user";
+
+  if (msg.role === "user") {
+    return (
+      <Message from="user">
+        <MessageAvatar name="You" />
+        <MessageContent>{msg.content}</MessageContent>
+      </Message>
+    );
+  }
+
+  if (msg.role === "tool") {
+    if (msg.toolName && renderTool[msg.toolName]) {
+      return (
+        <Message from="assistant">
+          <MessageAvatar name="AI" />
+          <MessageContent variant="flat">
+            {renderTool[msg.toolName]!(msg)}
+          </MessageContent>
+        </Message>
+      );
+    }
+    return null;
+  }
+
+  // assistant
+  return (
+    <Message from="assistant">
+      <MessageAvatar name="AI" />
+      <MessageContent variant="flat">
+        {showThinking && (
+          <div className="mb-2">
+            {isLast &&
+            (agent.isProcessing || agent.state.planSteps.length > 0) ? (
+              <AgentThinking
+                events={agent.events}
+                defaultExpanded={streaming}
+                compact
+              />
+            ) : agent.state.planSteps.length > 0 ? (
+              <Reasoning isStreaming={false} defaultOpen={false}>
+                <ReasoningTrigger
+                  title={`Reasoning (${agent.state.planSteps.length} step${
+                    agent.state.planSteps.length === 1 ? "" : "s"
+                  })`}
+                />
+                <ReasoningContent>
+                  <ol className="list-decimal space-y-1.5 pl-4">
+                    {agent.state.planSteps
+                      .filter((s) => s.status === "done")
+                      .map((s, si) => (
+                        <li key={si} className="text-[11px] sm:text-xs">
+                          <span className="font-medium">{s.intent}</span>
+                          {s.detail && (
+                            <span className="text-muted-foreground">
+                              {" "}
+                              — {s.detail}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                  </ol>
+                </ReasoningContent>
+              </Reasoning>
+            ) : null}
+          </div>
+        )}
+
+        {msg.content ? (
+          <div className="mt-1">
+            <Response>{msg.content}</Response>
+            {streaming && (
+              <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-foreground align-text-bottom" />
+            )}
+          </div>
+        ) : streaming ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader size={14} />
+            <span>{getActivityText(agent.state) || "Thinking…"}</span>
+          </div>
+        ) : null}
+
+        {msg.sources && msg.sources.length > 0 && !streaming && (
+          <div className="mt-3">
+            <Sources autoOpen={isLast} count={msg.sources.length}>
+              <SourcesTrigger count={msg.sources.length} />
+              <SourcesContent>
+                {msg.sources.map((s) => (
+                  <Source
+                    key={s.id}
+                    href={s.url}
+                    title={s.title}
+                    domain={s.domain}
+                  />
+                ))}
+              </SourcesContent>
+            </Sources>
+          </div>
+        )}
+
+        {msg.related && msg.related.length > 0 && !streaming && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {msg.related.map((q, qi) => (
+              <button
+                key={qi}
+                type="button"
+                className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] transition-colors hover:border-foreground/30 hover:bg-accent/30 sm:text-xs"
+                onClick={() => onSend(q)}
+              >
+                <Sparkles className="h-2.5 w-2.5 text-muted-foreground" />
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {isLast && !streaming && msg.content && (
+          <Actions className="mt-2">
+            <CopyButton text={msg.content} />
+            <Action
+              tooltip="Good answer"
+              label="Good answer"
+              icon={ThumbsUp}
+              onClick={() => {}}
+            />
+            <Action
+              tooltip="Bad answer"
+              label="Bad answer"
+              icon={ThumbsDown}
+              onClick={() => {}}
+            />
+            <Action
+              tooltip="Regenerate"
+              label="Regenerate"
+              icon={RotateCw}
+              onClick={onRetry}
+            />
+          </Actions>
+        )}
+      </MessageContent>
+    </Message>
+  );
+}
+
+// ── Main Component ───────────────────────────────────────────────
 
 interface AgentUIProps {
   agent: UseAgentReturn;
   className?: string;
   placeholder?: string;
   renderTool?: Record<string, (data: any) => React.ReactNode>;
+  emptyTitle?: string;
+  emptyDescription?: string;
 }
 
-export function AgentUI({ agent, className, placeholder = "Ask anything…", renderTool = {} }: AgentUIProps) {
+export function AgentUI({
+  agent,
+  className,
+  placeholder = "Ask anything…",
+  renderTool = {},
+  emptyTitle = "Agent ready",
+  emptyDescription = "Type a message to start a thread",
+}: AgentUIProps) {
   const [input, setInput] = React.useState("");
+  const [sending, setSending] = React.useState(false);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  useAutoResizeTextarea(inputRef, input);
 
-  // Auto-focus when idle
   React.useEffect(() => {
-    if (!agent.isProcessing) {
+    if (!agent.isProcessing && !sending) {
       inputRef.current?.focus();
     }
-  }, [agent.isProcessing]);
+  }, [agent.isProcessing, sending]);
 
-  // For each user message, show a reasoning block before the AI response
-  const showReasoning = (msgIdx: number) => {
-    const m = agent.messages[msgIdx];
-    if (!m || m.role !== "assistant") return false;
-    if (msgIdx < 1) return false;
-    return agent.messages[msgIdx - 1]?.role === "user";
-  };
+  const sendInThread = React.useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || agent.isProcessing || sending) return;
+      setSending(true);
+      try {
+        await agent.send(
+          trimmed,
+          agent.threadId ? { threadId: agent.threadId } : undefined,
+        );
+      } finally {
+        setSending(false);
+      }
+    },
+    [agent, sending],
+  );
+
+  const submit = React.useCallback(async () => {
+    const text = input.trim();
+    if (!text || agent.isProcessing || sending) return;
+    setInput("");
+    await sendInThread(text);
+  }, [input, agent.isProcessing, sending, sendInThread]);
+
+  const retryLast = React.useCallback(() => {
+    const lastUser = [...agent.messages]
+      .reverse()
+      .find((m) => m.role === "user");
+    if (lastUser?.content) void sendInThread(lastUser.content);
+  }, [agent.messages, sendInThread]);
+
+  const busy = agent.isProcessing || sending;
+  const showEmpty = agent.messages.length === 0 && !busy;
 
   return (
-    <div className={cn("flex h-full flex-col bg-background text-foreground", className)}>
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl lg:max-w-3xl px-3 sm:px-6 py-3 sm:py-8">
-          {/* Empty state */}
-          {agent.messages.length === 0 && !agent.isProcessing && (
-            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Bot className="h-8 w-8 text-muted-foreground" />
-              <h2 className="text-lg sm:text-xl font-semibold">Agent ready</h2>
-              <p className="text-sm text-muted-foreground max-w-md">Type a message to start</p>
-            </div>
-          )}
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-col bg-background text-foreground",
+        className,
+      )}
+    >
+      {/* Messages */}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <Conversation className="h-full">
+          <ConversationContent>
+            {showEmpty && (
+              <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center sm:py-24">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted">
+                  <Bot className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <h2 className="text-lg font-semibold tracking-tight sm:text-xl">
+                  {emptyTitle}
+                </h2>
+                <p className="max-w-md text-sm text-muted-foreground">
+                  {emptyDescription}
+                </p>
+              </div>
+            )}
 
-          {/* Messages */}
-          {agent.messages.map((msg, i) => (
-            <React.Fragment key={msg.id}>
-              {/* Reasoning between user and assistant */}
-              {showReasoning(i) && (
-                <Reasoning isStreaming={agent.isProcessing} defaultOpen={agent.isProcessing}>
-                  <ReasoningTrigger title={`Reasoning (${agent.state.planSteps.length} step${agent.state.planSteps.length === 1 ? "" : "s"})`} />
-                  <ReasoningContent>
-                    <ol className="space-y-1.5 list-decimal pl-4">
-                      {agent.state.planSteps
-                        .filter(s => s.status === "done")
-                        .map((s, si) => (
-                          <li key={si} className="text-[11px] sm:text-xs">
-                            <span className="font-medium">{s.intent}</span>
-                            {s.detail && <span className="text-muted-foreground"> — {s.detail}</span>}
-                          </li>
-                        ))}
-                    </ol>
-                  </ReasoningContent>
-                </Reasoning>
-              )}
+            {agent.messages.map((msg, i) => (
+              <MessageRow
+                key={msg.id}
+                msg={msg}
+                index={i}
+                messages={agent.messages}
+                agent={agent}
+                renderTool={renderTool}
+                onSend={(t) => void sendInThread(t)}
+                onRetry={retryLast}
+              />
+            ))}
 
-              {/* User message */}
-              {msg.role === "user" && (
-                <Message from="user">
-                  <MessageAvatar name="You" />
-                  <MessageContent>{msg.content}</MessageContent>
-                </Message>
-              )}
+            {agent.pendingInterrupt && (
+              <InterruptDialog
+                interrupt={agent.pendingInterrupt}
+                onApprove={agent.approveInterrupt}
+                onReject={() => agent.rejectInterrupt()}
+              />
+            )}
 
-              {/* Tool message — rendered via renderTool if registered */}
-              {msg.role === "tool" && msg.toolName && renderTool[msg.toolName] && (
-                <Message from="assistant">
-                  <MessageAvatar name="AI" />
-                  <MessageContent>
-                    {renderTool[msg.toolName]!(msg)}
-                  </MessageContent>
-                </Message>
-              )}
-
-              {/* Assistant message */}
-              {msg.role === "assistant" && (
+            {busy &&
+              agent.messages.filter((m) => m.role === "assistant").length ===
+                0 && (
                 <Message from="assistant">
                   <MessageAvatar name="AI" />
                   <MessageContent variant="flat">
-                    {msg.content && (
-                      <div className="mt-1">
-                        <Response>{msg.content}</Response>
-                        {agent.isProcessing && (
-                          <span className="inline-block w-1.5 h-3.5 bg-foreground ml-0.5 animate-pulse align-text-bottom" />
-                        )}
-                      </div>
-                    )}
-                    {!msg.content && agent.isProcessing && (
-                      <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                    <div className="space-y-2">
+                      <AgentThinking
+                        events={agent.events}
+                        defaultExpanded
+                        compact
+                      />
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Loader size={14} />
-                        <span>Thinking…</span>
+                        <span>
+                          {getActivityText(agent.state) || "Thinking…"}
+                        </span>
                       </div>
-                    )}
-
-                    {/* Sources — only on last assistant message when done */}
-                    {msg.sources && msg.sources.length > 0 && !agent.isProcessing && (
-                      <Sources autoOpen count={msg.sources.length}>
-                        <SourcesTrigger count={msg.sources.length} />
-                        <SourcesContent>
-                          {msg.sources.map((s: any) => (
-                            <Source key={s.id} href={s.url} title={s.title} domain={s.domain} />
-                          ))}
-                        </SourcesContent>
-                      </Sources>
-                    )}
-
-                    {/* Related questions */}
-                    {msg.related && msg.related.length > 0 && !agent.isProcessing && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {msg.related.map((q: string, qi: number) => (
-                          <button key={qi} type="button"
-                            className="inline-flex items-center gap-1 rounded-full border bg-card px-2.5 py-1 text-[10px] sm:text-xs hover:border-foreground/30 hover:bg-accent/30 transition-colors"
-                            onClick={() => agent.send(q)}>
-                            <Sparkles className="h-2.5 w-2.5 text-muted-foreground" />
-                            {q}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Actions */}
-                    {i === agent.messages.length - 1 && !agent.isProcessing && msg.content && (
-                      <Actions>
-                        <CopyButton text={msg.content} />
-                        <Action tooltip="Good answer" label="Good answer" icon={ThumbsUp} onClick={() => {}} />
-                        <Action tooltip="Bad answer" label="Bad answer" icon={ThumbsDown} onClick={() => {}} />
-                        <Action tooltip="Regenerate" label="Regenerate" icon={RotateCw} onClick={() => {}} />
-                      </Actions>
-                    )}
+                    </div>
                   </MessageContent>
                 </Message>
               )}
-            </React.Fragment>
-          ))}
 
-          {/* Thinking state when no assistant message yet */}
-          {/* Interrupt / HITL dialog */}
-          {agent.pendingInterrupt && (
-            <InterruptDialog
-              interrupt={agent.pendingInterrupt}
-              onApprove={agent.approveInterrupt}
-              onReject={() => agent.rejectInterrupt()}
-            />
-          )}
-
-          {/* Thinking state when no assistant message yet */}
-          {agent.isProcessing && agent.messages.filter(m => m.role === "assistant").length === 0 && (
-            <Message from="assistant">
-              <MessageAvatar name="AI" />
-              <MessageContent variant="flat">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader size={14} />
-                  <span>{getActivityText(agent.state) || "Thinking…"}</span>
-                </div>
-              </MessageContent>
-            </Message>
-          )}
-
-          {/* Error */}
-          {agent.error && (
-            <div className="mt-3">
-              <ErrorBanner
-                error={{
-                  message: agent.error,
-                  severity: "error",
-                  retryable: true,
-                }}
-                onRetry={() => {
-                  const lastUser = [...agent.messages]
-                    .reverse()
-                    .find((m) => m.role === "user");
-                  if (lastUser?.content) void agent.send(lastUser.content);
-                }}
-              />
-            </div>
-          )}
-        </div>
+            {agent.error && (
+              <div className="mt-3">
+                <ErrorBanner
+                  error={{
+                    message: agent.error,
+                    severity: "error",
+                    retryable: true,
+                  }}
+                  onRetry={retryLast}
+                />
+              </div>
+            )}
+          </ConversationContent>
+        </Conversation>
       </div>
 
-      {/* Input bar */}
-      <div className="border-t bg-background shrink-0" style={{ paddingBottom: "env(safe-area-inset-bottom, 8px)" }}>
+      {/* Composer */}
+      <div
+        className="shrink-0 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 8px)" }}
+      >
         <div className="p-2 sm:p-4">
           <form
-            onSubmit={(e) => { e.preventDefault(); if (input.trim()) { agent.send(input); setInput(""); } }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit();
+            }}
             className="mx-auto max-w-2xl lg:max-w-3xl"
           >
-            <Card className="rounded-xl sm:rounded-2xl shadow-sm border">
-              <div className="flex items-end gap-1.5 sm:gap-2 p-2 sm:p-3">
+            <Card className="rounded-2xl border shadow-sm">
+              <div className="flex items-end gap-2 p-2 sm:p-3">
                 <Textarea
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   placeholder={placeholder}
                   rows={1}
-                  disabled={agent.isProcessing}
+                  disabled={busy}
                   enterKeyHint="send"
-                  className="flex-1 min-h-[22px] sm:min-h-[24px] max-h-36 sm:max-h-48 resize-none border-0 shadow-none focus:outline-none bg-transparent px-1 text-sm leading-5 sm:leading-6 py-[3px]"
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (input.trim()) { agent.send(input); setInput(""); } }}} />
-                <Button type="submit" size="icon"
-                  disabled={!input.trim() || agent.isProcessing}
-                  className="h-8 w-8 sm:h-9 sm:w-9 rounded-full shrink-0 active:scale-95 transition-transform">
-                  <ArrowUp className="h-4 sm:h-[18px] w-4 sm:w-[18px]" />
+                  className="max-h-40 min-h-[44px] flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-base leading-6 shadow-none focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 sm:text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void submit();
+                    }
+                  }}
+                />
+                <Button
+                  type={busy ? "button" : "submit"}
+                  size="icon"
+                  variant={busy ? "destructive" : "default"}
+                  disabled={!busy && !input.trim()}
+                  onClick={busy ? () => agent.cancel() : undefined}
+                  className="h-11 w-11 shrink-0 rounded-full transition-transform active:scale-95 sm:h-10 sm:w-10"
+                  aria-label={busy ? "Stop" : "Send"}
+                >
+                  {busy ? (
+                    <Square className="h-4 w-4 fill-current" />
+                  ) : (
+                    <ArrowUp className="h-5 w-5" />
+                  )}
                 </Button>
               </div>
             </Card>
-            <p className="mt-1.5 text-center text-[9px] sm:text-[10px] text-muted-foreground">
-              Anvil agent — verify important info
+            <p className="mt-2 px-2 text-center text-[10px] text-muted-foreground">
+              {agent.threadId
+                ? `Thread ${agent.threadId.slice(0, 8)}… · Anvil can make mistakes`
+                : "Anvil can make mistakes. Verify important info."}
             </p>
           </form>
         </div>
@@ -394,7 +603,7 @@ function CopyButton({ text }: { text: string }) {
       label="Copy"
       icon={copied ? Check : Copy}
       onClick={() => {
-        navigator.clipboard.writeText(text);
+        void navigator.clipboard.writeText(text);
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}

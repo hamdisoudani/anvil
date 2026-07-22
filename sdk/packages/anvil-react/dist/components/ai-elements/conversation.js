@@ -17,31 +17,47 @@ export function useConversation() {
 }
 export function Conversation({ className, children, ...props }) {
     const scrollRef = React.useRef(null);
+    const contentRef = React.useRef(null);
     const [isAtBottom, setIsAtBottom] = React.useState(true);
-    const scrollToBottom = React.useCallback(() => {
+    const isAtBottomRef = React.useRef(true);
+    const scrollToBottom = React.useCallback((smooth = true) => {
         const el = scrollRef.current;
-        if (el) {
+        if (!el)
+            return;
+        if (smooth) {
             el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+        }
+        else {
+            el.scrollTop = el.scrollHeight;
         }
     }, []);
     const onScroll = React.useCallback(() => {
         const el = scrollRef.current;
         if (!el)
             return;
-        const threshold = 60;
+        const threshold = 80;
         const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+        isAtBottomRef.current = atBottom;
         setIsAtBottom(atBottom);
     }, []);
-    // Auto-scroll on new content (only if user is already at bottom)
-    // Use useLayoutEffect for DOM measurement, depend on children to detect new content
-    React.useLayoutEffect(() => {
-        if (isAtBottom) {
-            const el = scrollRef.current;
-            if (el)
-                el.scrollTop = el.scrollHeight;
-        }
-    }, [isAtBottom, children]);
-    return (_jsx(ConversationContext.Provider, { value: { isAtBottom, scrollToBottom }, children: _jsxs("div", { className: cn("relative flex-1 min-h-0", className), ...props, children: [_jsx("div", { ref: scrollRef, onScroll: onScroll, className: "h-full overflow-y-auto", children: children }), _jsx(ConversationScrollButton, {})] }) }));
+    // Stick to bottom while streaming / new messages arrive, unless the
+    // user has scrolled up. ResizeObserver catches token-by-token growth.
+    React.useEffect(() => {
+        const content = contentRef.current;
+        const scroller = scrollRef.current;
+        if (!content || !scroller)
+            return;
+        const stick = () => {
+            if (isAtBottomRef.current) {
+                scroller.scrollTop = scroller.scrollHeight;
+            }
+        };
+        stick();
+        const ro = new ResizeObserver(stick);
+        ro.observe(content);
+        return () => ro.disconnect();
+    }, [children]);
+    return (_jsx(ConversationContext.Provider, { value: { isAtBottom, scrollToBottom: () => scrollToBottom(true) }, children: _jsxs("div", { className: cn("relative flex-1 min-h-0", className), ...props, children: [_jsx("div", { ref: scrollRef, onScroll: onScroll, className: "h-full overflow-y-auto overscroll-contain", children: _jsx("div", { ref: contentRef, children: children }) }), _jsx(ConversationScrollButton, {})] }) }));
 }
 export function ConversationContent({ className, children, ...props }) {
     return (_jsx("div", { className: cn("mx-auto max-w-2xl lg:max-w-3xl px-3 sm:px-6 py-3 sm:py-8", className), ...props, children: children }));

@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * useAgent — The ONE hook to build any Anvil agent UI.
  *
@@ -237,12 +239,13 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
 
   // Store session methods in refs so callbacks don't depend on session object identity
   const startRef = useRef<
-    (
-      task: string,
-      opts?: { threadId?: string; focus?: string },
-    ) => Promise<{ sessionId: string; threadId: string }>
-  >();
-  const cancelRef = useRef<() => void>();
+    | ((
+        task: string,
+        opts?: { threadId?: string; focus?: string },
+      ) => Promise<{ sessionId: string; threadId: string }>)
+    | null
+  >(null);
+  const cancelRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     startRef.current = session.start;
     cancelRef.current = session.cancel;

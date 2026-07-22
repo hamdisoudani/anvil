@@ -1,12 +1,9 @@
 /**
  * Response — renders AI assistant text as Markdown.
  *
- * Uses `marked` (battle-tested CommonMark parser) instead of a homegrown
- * regex parser. Renders HTML, sanitized via a strict allowlist.
- *
- * The AI SDK ecosystem recommends `streamdown` for production, but it
- * pulls in additional deps and assumes the AI SDK. `marked` is
- * dependency-light and handles nested bold/italic/code correctly.
+ * Uses `marked` (CommonMark) + DOMPurify. DOMPurify is browser-only;
+ * during SSR / first paint we render a safe plain-text fallback so
+ * Next.js App Router never touches `window` on the server.
  */
 import * as React from "react";
 interface ResponseProps extends React.HTMLAttributes<HTMLDivElement> {

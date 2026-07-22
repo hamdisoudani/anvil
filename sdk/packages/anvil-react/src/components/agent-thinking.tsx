@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * AgentThinking — A generic real-time agent thinking display.
  *

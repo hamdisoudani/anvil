@@ -1,3 +1,5 @@
+"use client";
+
 // shadcn/ui-style Button component. Built with cva for variants.
 import * as React from "react";
 import { Slot } from "@radix-ui/react-slot";

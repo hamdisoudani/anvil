@@ -16,10 +16,11 @@ RUN pnpm install --no-frozen-lockfile
 
 # Now copy the full SDK source and build
 COPY sdk/ ./
+# chat-app package name is "chat-app"; Next output:'export' writes to out/
 RUN pnpm --filter @anvil/client build && \
     pnpm --filter @anvil/react-headless build && \
     pnpm --filter @anvil/react build && \
-    pnpm --filter anvil-chat-app build
+    pnpm --filter chat-app build
 
 # ── Go build stage ──────────────────────────────────────────────
 FROM golang:1.25-alpine AS build
@@ -27,7 +28,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-COPY --from=frontend /sdk/examples/chat-app/dist /src/internal/perplexity/chat_app_dist
+# Next static export lands in out/ (not Vite dist/)
+COPY --from=frontend /sdk/examples/chat-app/out /src/internal/perplexity/chat_app_dist
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/perplexity ./cmd/perplexity-server
 
 # ── Runtime stage ───────────────────────────────────────────────

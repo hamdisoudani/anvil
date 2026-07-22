@@ -1,0 +1,169 @@
+event: ready
+data: {"session_id":"29c3a16a-3afd-4d46-870f-de088abb68c6"}
+
+id: 1
+event: session.start
+data: {"type":"session.start","payload":{"focus":"","task":"What is event sourcing in one sentence?","thread_id":"ff020544-e449-46f9-a991-c760d1738030"}}
+
+id: 2
+event: plan.step
+data: {"type":"plan.step","payload":{"id":"plan","intent":"Planning the search","status":"running"}}
+
+id: 3
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"0 sub-queries","id":"plan","intent":"Plan built","status":"done"}}
+
+id: 4
+event: frontend.call
+data: {"type":"frontend.call","payload":{"input":{"needs_search":false,"reason":"The user asks for a concise definition, which can be generated without external sources.","sub_queries":[],"synthesize_hint":"Provide a clear, one-sentence definition of event sourcing."},"name":"show_plan_step"}}
+
+id: 5
+event: plan.step
+data: {"type":"plan.step","payload":{"id":"generate","intent":"Generating answer","status":"running"}}
+
+id: 6
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"Event"}}
+
+id: 7
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" sourcing"}}
+
+id: 8
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" is"}}
+
+id: 9
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" a"}}
+
+id: 10
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" pattern"}}
+
+id: 11
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" where"}}
+
+id: 12
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" all"}}
+
+id: 13
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" changes"}}
+
+id: 14
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 15
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" an"}}
+
+id: 16
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" application's"}}
+
+id: 17
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" state"}}
+
+id: 18
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" are"}}
+
+id: 19
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" captured"}}
+
+id: 20
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" as"}}
+
+id: 21
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" a"}}
+
+id: 22
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" sequential"}}
+
+id: 23
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":","}}
+
+id: 24
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" immutable"}}
+
+id: 25
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" series"}}
+
+id: 26
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" of"}}
+
+id: 27
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" events"}}
+
+id: 28
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" that"}}
+
+id: 29
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" can"}}
+
+id: 30
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" be"}}
+
+id: 31
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" replay"}}
+
+id: 32
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"ed"}}
+
+id: 33
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" to"}}
+
+id: 34
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" reconstruct"}}
+
+id: 35
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" the"}}
+
+id: 36
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" current"}}
+
+id: 37
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":" state"}}
+
+id: 38
+event: answer.chunk
+data: {"type":"answer.chunk","payload":{"delta":"."}}
+
+id: 39
+event: plan.step
+data: {"type":"plan.step","payload":{"detail":"183 chars","id":"generate","intent":"Generating answer","status":"done"}}
+
+id: 40
+event: plan.step
+data: {"type":"plan.step","payload":{"id":"done","intent":"Done","status":"done"}}
+
+id: 41
+event: done
+data: {"type":"done","payload":{"answer":"Event sourcing is a pattern where all changes to an application's state are captured as a sequential, immutable series of events that can be replayed to reconstruct the current state.","plan":null,"related":[],"session_id":"29c3a16a-3afd-4d46-870f-de088abb68c6","sources":[],"thread_id":"ff020544-e449-46f9-a991-c760d1738030"}}
+
+: keepalive
+

@@ -1,3 +1,5 @@
+"use client";
+
 // shadcn/ui-style Avatar component.
 import * as React from "react";
 import { cn } from "../../lib/utils";
