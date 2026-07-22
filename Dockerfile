@@ -27,7 +27,8 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 # Next static export lands in out/ (not Vite dist/)
 COPY --from=frontend /sdk/examples/chat-app/out /src/internal/perplexity/chat_app_dist
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/perplexity ./cmd/perplexity-server
