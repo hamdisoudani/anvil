@@ -34,6 +34,15 @@ COPY internal/ ./internal/
 # NOTE: placing this here also busts the go build layer cache whenever
 # the frontend output changes (different file hashes = different layer).
 COPY --from=frontend /sdk/examples/chat-app/out /src/internal/perplexity/chat_app_dist
+# Go's //go:embed directive ignores files/dirs starting with `_` or `.`.
+# Next.js puts all static assets under _next/static/... — silently dropped
+# by embed. Rename _next -> next so embed.FS picks everything up.
+# The app_embed.go handler translates /app/_next/... <-> next/... for the
+# browser and the embed.
+RUN if [ -d /src/internal/perplexity/chat_app_dist/_next ]; then \
+      mv /src/internal/perplexity/chat_app_dist/_next \
+         /src/internal/perplexity/chat_app_dist/next; \
+    fi
 # Touch a file to bust Go's build cache when frontend changes
 RUN find /src/internal/perplexity/chat_app_dist -name "*.css" -o -name "*.js" | sort | md5sum > /tmp/frontend.sum
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/perplexity ./cmd/perplexity-server
