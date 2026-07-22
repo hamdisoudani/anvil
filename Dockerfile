@@ -29,8 +29,13 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-# Next static export lands in out/ (not Vite dist/)
+# Copy frontend build output BEFORE go build so the embed picks it up.
+# This must come AFTER COPY internal/ so it overwrites any stale chat_app_dist.
+# NOTE: placing this here also busts the go build layer cache whenever
+# the frontend output changes (different file hashes = different layer).
 COPY --from=frontend /sdk/examples/chat-app/out /src/internal/perplexity/chat_app_dist
+# Touch a file to bust Go's build cache when frontend changes
+RUN find /src/internal/perplexity/chat_app_dist -name "*.css" -o -name "*.js" | sort | md5sum > /tmp/frontend.sum
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/perplexity ./cmd/perplexity-server
 
 # ── Runtime stage ───────────────────────────────────────────────
