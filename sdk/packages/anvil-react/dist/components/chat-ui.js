@@ -43,6 +43,11 @@ export function ChatUI({ agent, className, placeholder = "Ask anything…", titl
     const [copiedId, setCopiedId] = React.useState(null);
     useAutoResizeTextarea(inputRef, input);
     const busy = agent.isProcessing || sending;
+    // DEBUG: surface state to browser console for bisect of disabled-Send bug
+    React.useEffect(() => {
+        // eslint-disable-next-line no-console
+        console.log("[chat-ui] busy=", busy, "isProcessing=", agent.isProcessing, "status=", agent.status, "sessionId=", agent.sessionId, "inputLen=", input.length);
+    });
     React.useEffect(() => {
         if (!busy)
             inputRef.current?.focus();
