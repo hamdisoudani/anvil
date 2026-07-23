@@ -80,6 +80,15 @@ func findFrontendToolIn(tools []*FrontendTool, name string) *FrontendTool {
 	return nil
 }
 
+// frontendToolNames returns the names of a list of FrontendTools for logging.
+func frontendToolNames(tools []*FrontendTool) []string {
+	names := make([]string, len(tools))
+	for i, t := range tools {
+		names[i] = t.Name()
+	}
+	return names
+}
+
 // LLMRouter is the interface we need.
 type LLMRouter interface {
 	Stream(ctx context.Context, req LLMRequest, onDelta func(string)) (LLMResponse, error)
