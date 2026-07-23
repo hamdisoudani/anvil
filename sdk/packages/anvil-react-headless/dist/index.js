@@ -17,22 +17,25 @@ import { jsx as _jsx } from "react/jsx-runtime";
  * Designed to be UI-agnostic. Bring your own components.
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, } from "react";
-import { AnvilClient, } from "@anvil/client";
+import { AnvilClient, reduceAgentStateFromEvents as canonicalReduceAgentStateFromEvents, } from "@anvil/client";
+export { canonicalReduceAgentStateFromEvents };
 // ── Initial state ─────────────────────────────────────────────────
 const INITIAL_AGENT_STATE = {
     phase: "idle",
     task: null,
     sessionId: null,
+    threadId: null,
     planSteps: [],
     plan: null,
     sources: [],
     searchesDone: 0,
     pagesRead: 0,
     currentStepIndex: -1,
+    currentReasoning: "",
     currentAnswer: "",
     isStreaming: false,
-    error: null,
     doneReceived: false,
+    error: null,
 };
 // ── Pure reducers (framework-agnostic data layer) ─────────────────
 /**
@@ -47,61 +50,68 @@ const INITIAL_AGENT_STATE = {
  * @returns      The next AgentState.
  */
 export function reduceAgentState(state, event) {
+    // Unknown events: silently drop. The server shouldn't be sending
+    // them, but if a future schema upgrade races a deploy, we don't
+    // crash.
+    if ("_unknown" in event)
+        return state;
+    // Dispatch on the discriminated union. TypeScript narrows
+    // `event.payload` to the typed payload for each branch — no
+    // casts, no `as any`, no `Record<string, unknown>`.
     switch (event.type) {
-        // ── session.start ───────────────────────────────────────────
-        // The agent has begun processing. Extract the task and transition
-        // to the "planning" phase.
         case "session.start": {
-            const p = event.payload;
             return {
                 ...INITIAL_AGENT_STATE,
                 phase: "planning",
-                task: p.task ?? state.task,
+                task: event.payload.task,
                 sessionId: event.sessionId,
+                threadId: event.payload.threadId,
             };
         }
-        // ── plan.step ────────────────────────────────────────────────
-        // A step in the agent's plan has started, completed, or errored.
-        // Updates existing steps (status transitions) or appends new ones.
+        case "plan.set": {
+            // The canonical `plan.set` event delivers the full plan
+            // object. Replace any prior plan.
+            const plan = event.payload.plan;
+            return { ...state, plan };
+        }
         case "plan.step": {
-            const payload = event.payload;
+            // A step transitioned. Update existing step with same id, or
+            // append.
             const step = {
-                id: String(payload.id ?? ""),
-                intent: payload.intent ?? "",
-                status: payload.status ?? "running",
-                detail: payload.detail,
+                id: event.payload.step.id,
+                intent: event.payload.step.intent,
+                status: event.payload.step.status,
+                detail: event.payload.step.detail,
+                tool: event.payload.step.tool,
+                index: event.payload.step.index,
             };
-            // Update existing step or append new one
             const existingIdx = state.planSteps.findIndex((s) => s.id === step.id);
             const planSteps = existingIdx >= 0
-                ? state.planSteps.map((s, i) => i === existingIdx ? { ...s, ...step } : s)
+                ? state.planSteps.map((s, i) => (i === existingIdx ? { ...s, ...step } : s))
                 : [...state.planSteps, step];
             const currentStepIndex = existingIdx >= 0 ? existingIdx : planSteps.length - 1;
-            // Derive phase from the currently running step's intent
+            // Derive phase from the currently running step.
             const runningStep = planSteps.find((s) => s.status === "running");
             let phase = state.phase;
             if (runningStep) {
                 const intent = runningStep.intent.toLowerCase();
-                if (intent.includes("search") ||
-                    intent.includes("find") ||
-                    intent.includes("browse")) {
+                const tool = (runningStep.tool ?? "").toLowerCase();
+                if (tool === "search" || /search|find|browse/.test(intent)) {
                     phase = "searching";
                 }
-                else if (intent.includes("read") ||
-                    intent.includes("extract") ||
-                    intent.includes("scrape") ||
-                    intent.includes("parse")) {
+                else if (tool === "fetch_page" ||
+                    /read|extract|scrape|parse/.test(intent)) {
                     phase = "reading";
                 }
-                else if (intent.includes("plan")) {
+                else if (/plan/.test(intent)) {
                     phase = "planning";
                 }
+                else if (/synthesize|write|generate/.test(intent)) {
+                    phase = "writing";
+                }
             }
-            // Count completed searches and page reads
-            const searchesDone = planSteps.filter((s) => s.status === "done" &&
-                /search|find|browse/i.test(s.intent)).length;
-            const pagesRead = planSteps.filter((s) => s.status === "done" &&
-                /read|extract|scrape|parse/i.test(s.intent)).length;
+            const searchesDone = planSteps.filter((s) => s.status === "done" && /search|find|browse/i.test(s.intent)).length;
+            const pagesRead = planSteps.filter((s) => s.status === "done" && /read|extract|scrape|parse/i.test(s.intent)).length;
             return {
                 ...state,
                 planSteps,
@@ -111,115 +121,105 @@ export function reduceAgentState(state, event) {
                 pagesRead,
             };
         }
-        // ── sources.found ────────────────────────────────────────────
-        // New sources discovered by the agent. Deduplicated by URL.
         case "sources.found": {
-            const p = event.payload;
+            // New sources — dedup by URL.
             const existingUrls = new Set(state.sources.map((s) => s.url));
-            const newSources = p.sources.filter((s) => !existingUrls.has(s.url));
+            const newSources = event.payload.sources.filter((s) => !existingUrls.has(s.url));
             if (newSources.length === 0)
                 return state;
-            return {
-                ...state,
-                sources: [...state.sources, ...newSources],
-            };
+            return { ...state, sources: [...state.sources, ...newSources] };
         }
-        // ── frontend.call ────────────────────────────────────────────
-        // Agent-triggered frontend actions. We only care about
-        // show_plan_step, which delivers the full plan object.
         case "frontend.call": {
-            const p = event.payload;
-            if (p.name === "show_plan_step" && p.input) {
-                const plan = p.input;
-                return {
-                    ...state,
-                    plan,
-                    // Keep currentStepIndex if the plan doesn't specify one
-                    currentStepIndex: state.currentStepIndex,
+            // Some deployments deliver the plan via frontend.call
+            // (legacy). Map to AgentPlan. The wire payload is `unknown`
+            // (legacy compatibility); we explicitly assert shape and
+            // ensure `subQueries` is at least `[]` to match AgentPlan.
+            const fc = event.payload;
+            if (fc.name === "show_plan_step" && fc.input) {
+                const input = fc.input;
+                const plan = {
+                    reason: input.reason,
+                    synthesizeHint: input.synthesizeHint,
+                    needsSearch: input.needsSearch,
+                    subQueries: input.subQueries ?? [],
+                    ...input,
                 };
+                return { ...state, plan };
             }
-            // render_sources and show_related are informational —
-            // sources are already tracked via sources.found events.
             return state;
         }
-        // ── answer.chunk ─────────────────────────────────────────────
-        // Streaming token from the agent's final answer.
-        // Transitions phase to "writing".
+        case "think.chunk": {
+            // Internal monologue. Stored separately from answer text so
+            // reasoning UIs can render it without polluting the final
+            // answer.
+            return {
+                ...state,
+                isStreaming: true,
+                currentReasoning: (state.currentReasoning ?? "") + event.payload.delta,
+            };
+        }
         case "answer.chunk": {
-            const p = event.payload;
             return {
                 ...state,
                 phase: "writing",
                 isStreaming: true,
-                currentAnswer: state.currentAnswer + (p.delta ?? ""),
+                currentAnswer: state.currentAnswer + event.payload.delta,
             };
         }
-        // ── think.chunk ──────────────────────────────────────────────
-        // Streaming token from the agent's internal monologue/thinking.
-        // Also accumulated into currentAnswer for a unified view.
-        case "think.chunk": {
-            const p = event.payload;
-            return {
-                ...state,
-                isStreaming: true,
-                currentAnswer: state.currentAnswer + (p.delta ?? ""),
-            };
-        }
-        // ── done ──────────────────────────────────────────────────────
-        // The agent has finished its task.
         case "done": {
             return {
                 ...state,
                 phase: "done",
                 doneReceived: true,
                 isStreaming: false,
+                // Done payload may carry the final answer if chunks were
+                // dropped from the buffer.
+                currentAnswer: event.payload.answer ?? state.currentAnswer,
             };
         }
-        // ── paused ────────────────────────────────────────────────────
-        // The agent was paused (awaiting user input or tool result).
         case "paused": {
-            return {
-                ...state,
-                phase: state.phase, // Preserve last known phase
-                isStreaming: false,
-            };
+            return { ...state, isStreaming: false };
         }
-        // ── error ─────────────────────────────────────────────────────
-        // An error occurred — could be unrecoverable or recoverable.
-        // Parses structured AgentError from payload fields.
         case "error": {
-            const raw = event.payload;
-            const message = (typeof raw?.message === "string" && raw.message) ||
-                (typeof raw?.err === "string" && raw.err) ||
-                (typeof raw?.error === "string" && raw.error) ||
-                "An unknown error occurred";
-            const code = typeof raw?.code === "string" ? raw.code : undefined;
-            const severity = ["info", "warning", "error", "fatal"].includes(raw?.severity)
-                ? raw.severity
-                : "error";
-            const recoverable = Boolean(raw?.recoverable);
-            const retryable = raw?.retryable === undefined ? true : Boolean(raw?.retryable);
-            const stepId = (typeof raw?.step_id === "string" && raw.step_id) ||
-                (typeof raw?.stepId === "string" && raw.stepId) ||
-                undefined;
-            // Recoverable errors keep the current phase so partial progress stays visible.
+            // Wire-level error becomes the UI-facing AgentError shape.
+            // `raw` carries the full payload for debugging.
+            const p = event.payload;
+            const error = {
+                message: p.message,
+                code: p.code,
+                severity: p.severity,
+                recoverable: p.recoverable,
+                retryable: p.retryable,
+                stepId: p.step_id,
+                raw: p,
+            };
             return {
                 ...state,
-                phase: recoverable ? state.phase : "error",
-                error: {
-                    message,
-                    code,
-                    severity,
-                    recoverable,
-                    retryable,
-                    stepId,
-                    raw,
-                },
+                phase: p.recoverable ? state.phase : "error",
+                error,
                 isStreaming: false,
             };
         }
-        default:
+        case "tool.call":
+        case "tool.result":
+        case "subagent.start":
+        case "subagent.end":
+        case "answer.end":
+        case "think.start":
+        case "think.end":
+        case "anvil.dropped":
+        case "checkpoint":
+        case "ready":
+            // Currently informational. Hook into them in a future
+            // iteration; for now the UI doesn't need them.
             return state;
+        default: {
+            // Exhaustiveness check: if a new event type is added to the
+            // schema, this assignment fails to compile until handled.
+            const _exhaustive = event;
+            void _exhaustive;
+            return state;
+        }
     }
 }
 /**
@@ -243,7 +243,7 @@ export function reduceAgentStateFromEvents(events) {
  *
  * **sharedEvents mode** (recommended for composability):
  * ```tsx
- * const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
+ * const [sharedEvents, setSharedEvents] = useState<AnyAnvilEvent[]>([]);
  * const session = useSession({
  *   onEvent: (e) => setSharedEvents(prev => [...prev, e]),
  * });
@@ -371,7 +371,7 @@ export function useSession(opts = {}) {
         setLastEventId(0);
         subRef.current = client.subscribe(id, async (e) => {
             setEventCount((c) => c + 1);
-            setLastEventId(e.id);
+            setLastEventId(e.eventId);
             onEventRef.current?.(e);
             // Handle tool calls — either via onToolCall or the registry
             if (e.type === "tool.call") {
@@ -478,12 +478,14 @@ export function useSession(opts = {}) {
     return { sessionId, status, error, start, resume, cancel, eventCount, lastEventId };
 }
 // ── useEvents: typed event log for a session ─────────────────────
-export function useEvents(sessionId, onEvent) {
+//
+// Returns the full event log for a session. Subscribes internally;
+// for shared-events composition, use the overload below or pipe
+// `useSession({ onEvent })` into a parent state.
+export function useEvents(sessionId) {
     const { client } = useAnvil();
     const [events, setEvents] = useState([]);
     const subRef = useRef(null);
-    const onEventRef = useRef(onEvent);
-    onEventRef.current = onEvent;
     useEffect(() => {
         if (!sessionId) {
             setEvents([]);
@@ -491,12 +493,11 @@ export function useEvents(sessionId, onEvent) {
         }
         subRef.current = client.subscribe(sessionId, (e) => {
             setEvents((prev) => [...prev, e]);
-            onEventRef.current?.(e);
         });
         return () => subRef.current?.unsubscribe();
     }, [sessionId, client]);
     const clear = useCallback(() => setEvents([]), []);
-    return { events, clear, lastId: events.at(-1)?.id ?? 0 };
+    return { events, clear, lastId: events.at(-1)?.eventId ?? 0 };
 }
 // ── useAnvilEvent: subscribe to a specific event type ─────────────
 export function useAnvilEvent(sessionId, type, handler) {
@@ -507,8 +508,9 @@ export function useAnvilEvent(sessionId, type, handler) {
         if (!sessionId)
             return undefined;
         const sub = client.subscribe(sessionId, (e) => {
-            if (e.type === type)
+            if (e.type === type) {
                 handlerRef.current(e);
+            }
         });
         return () => sub.unsubscribe();
     }, [sessionId, type, client]);
@@ -551,7 +553,7 @@ export function useChat(sessionId, events) {
                     const task = e.payload?.task;
                     if (task) {
                         out.push({
-                            id: `user-${e.id}`,
+                            id: `user-${e.eventId}`,
                             role: "user",
                             content: task,
                             timestamp: Date.parse(e.createdAt),
@@ -564,7 +566,7 @@ export function useChat(sessionId, events) {
                     const delta = e.payload.delta;
                     if (!currentAssistant) {
                         currentAssistant = {
-                            id: `assistant-${e.id}`,
+                            id: `assistant-${e.eventId}`,
                             role: "assistant",
                             content: "",
                             timestamp: Date.parse(e.createdAt),
@@ -600,7 +602,7 @@ export function useChat(sessionId, events) {
                 case "tool.call": {
                     const p = e.payload;
                     out.push({
-                        id: `tool-call-${e.id}`,
+                        id: `tool-call-${e.eventId}`,
                         role: "tool",
                         content: p.name,
                         toolName: p.name,

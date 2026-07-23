@@ -350,11 +350,19 @@ const PlanSection = React.memo(function PlanSection({
   plan: AgentState["plan"];
 }) {
   if (!plan) return null;
-  const subQueries = plan.sub_queries;
+  // Snake→camel migration — schema now uses camelCase consistently.
+  // Both fields live on `plan` either as declared or via the
+  // index-signature pass-through that the wire may surface; we
+  // tolerate both.
+  const subQueries =
+    (plan as { subQueries?: unknown }).subQueries ??
+    (plan as { sub_queries?: unknown }).sub_queries;
+  const synthHint =
+    (plan as { synthesizeHint?: unknown }).synthesizeHint ??
+    (plan as { synthesize_hint?: unknown }).synthesize_hint;
   const hasSubQueries = Array.isArray(subQueries) && subQueries.length > 0;
   const hasReason = typeof plan.reason === "string" && plan.reason.length > 0;
-  const hasSynthHint =
-    typeof plan.synthesize_hint === "string" && plan.synthesize_hint.length > 0;
+  const hasSynthHint = typeof synthHint === "string" && synthHint.length > 0;
   if (!hasSubQueries && !hasReason) return null;
 
   return (
@@ -369,7 +377,7 @@ const PlanSection = React.memo(function PlanSection({
           </p>
           {hasSynthHint && (
             <p className="mt-1.5 text-[11px] text-muted-foreground">
-              Answer style: {plan.synthesize_hint}
+              Answer style: {synthHint as string}
             </p>
           )}
         </div>

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/hamdisoudani/anvil/internal/core/wire"
 )
 
 // StreamingBus is a per-session pub/sub for orchestrator events.
@@ -23,11 +25,14 @@ import (
 // session and replays them to new subscribers.
 type StreamingBus struct {
 	mu          sync.RWMutex
-	subscribers map[string]map[chan Event]struct{}
-	history     map[string][]Event // sessionID -> recent events (replay buffer)
+	subscribers map[string]map[chan wire.Event]struct{}
+	history     map[string][]wire.Event // sessionID -> recent events (replay buffer)
 	histSize    int
 	// Thread → sessions index, for multi-run history.
 	threads map[string][]string // threadID -> [sessionID1, sessionID2, ...]
+	// Optional sink — typically a TurnStore — that observes every
+	// published event. Wired in NewHandler.
+	OnPublish func(wire.Event)
 }
 
 // ReplayBufferSize is how many events to keep per session for late joiners.
@@ -39,8 +44,8 @@ const ReplayBufferSize = 4096
 
 func NewStreamingBus() *StreamingBus {
 	return &StreamingBus{
-		subscribers: make(map[string]map[chan Event]struct{}),
-		history:     make(map[string][]Event),
+		subscribers: make(map[string]map[chan wire.Event]struct{}),
+		history:     make(map[string][]wire.Event),
 		histSize:    ReplayBufferSize,
 		threads:     make(map[string][]string),
 	}
@@ -63,17 +68,35 @@ func (b *StreamingBus) ThreadSessions(threadID string) []string {
 	return out
 }
 
-func (b *StreamingBus) Subscribe(sessionID string) chan Event {
+// ThreadForSession looks up the thread id that owns a session. Returns
+// "" if the session isn't known to any thread (e.g. it was never
+// started via a thread-bound call). Linear scan over threads — fine
+// for the small thread counts in this demo server; for production
+// with thousands of threads, swap for an inverted map.
+func (b *StreamingBus) ThreadForSession(sessionID string) string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	for tid, sids := range b.threads {
+		for _, sid := range sids {
+			if sid == sessionID {
+				return tid
+			}
+		}
+	}
+	return ""
+}
+
+func (b *StreamingBus) Subscribe(sessionID string) chan wire.Event {
 	// Buffer must be larger than ReplayBufferSize to avoid deadlock
 	// when replaying synchronously (we fill the buffer before the
 	// consumer starts reading).
-	ch := make(chan Event, ReplayBufferSize*2)
+	ch := make(chan wire.Event, ReplayBufferSize*2)
 	b.mu.Lock()
 	if _, ok := b.subscribers[sessionID]; !ok {
-		b.subscribers[sessionID] = make(map[chan Event]struct{})
+		b.subscribers[sessionID] = make(map[chan wire.Event]struct{})
 	}
 	b.subscribers[sessionID][ch] = struct{}{}
-	hist := append([]Event{}, b.history[sessionID]...)
+	hist := append([]wire.Event{}, b.history[sessionID]...)
 	b.mu.Unlock()
 
 	// Replay synchronously so that replay events arrive BEFORE any
@@ -85,7 +108,7 @@ func (b *StreamingBus) Subscribe(sessionID string) chan Event {
 	return ch
 }
 
-func (b *StreamingBus) Unsubscribe(sessionID string, ch chan Event) {
+func (b *StreamingBus) Unsubscribe(sessionID string, ch chan wire.Event) {
 	b.mu.Lock()
 	if subs, ok := b.subscribers[sessionID]; ok {
 		delete(subs, ch)
@@ -93,27 +116,34 @@ func (b *StreamingBus) Unsubscribe(sessionID string, ch chan Event) {
 	b.mu.Unlock()
 }
 
-func (b *StreamingBus) Publish(sessionID string, e Event) {
+// Publish accepts a legacy orchestrator Event and forwards it as a
+// canonical wire.Event. The wire conversion lives in wire_bridge.go.
+//
+// This is the single funnel: every orchestrator → bus publish passes
+// here, so the wire shape stays consistent with the TypeScript
+// schema.
+func (b *StreamingBus) Publish(sessionID, threadID string, e Event) {
+	we := toWireEvent(sessionID, threadID, e)
 	// Add to history (with size cap). SESSION-LIFETIME events
 	// (e.g. session.start) are protected from eviction so the
 	// user message is always recoverable on reload.
 	b.mu.Lock()
 	if _, ok := b.history[sessionID]; !ok {
-		b.history[sessionID] = make([]Event, 0, b.histSize)
+		b.history[sessionID] = make([]wire.Event, 0, b.histSize)
 	}
 	hist := b.history[sessionID]
-	if e.Type == EventSessionStart {
+	if we.Type == wire.EventSessionStart {
 		// Pin session.start at index 0 — never evict.
 		// Drop any other "pin" event we may have inserted (defensive).
 		filtered := hist[:0]
 		for _, h := range hist {
-			if h.Type != EventSessionStart {
+			if h.Type != wire.EventSessionStart {
 				filtered = append(filtered, h)
 			}
 		}
-		hist = append([]Event{e}, filtered...)
+		hist = append([]wire.Event{we}, filtered...)
 	} else {
-		hist = append(hist, e)
+		hist = append(hist, we)
 	}
 	if len(hist) > b.histSize {
 		// Drop oldest non-pinned events only.
@@ -121,7 +151,7 @@ func (b *StreamingBus) Publish(sessionID string, e Event) {
 		drop := 0
 		i := 0
 		for drop < excess && i < len(hist) {
-			if hist[i].Type != EventSessionStart {
+			if hist[i].Type != wire.EventSessionStart {
 				hist = append(hist[:i], hist[i+1:]...)
 				drop++
 			} else {
@@ -131,17 +161,23 @@ func (b *StreamingBus) Publish(sessionID string, e Event) {
 	}
 	b.history[sessionID] = hist
 	subs := b.subscribers[sessionID]
-	chans := make([]chan Event, 0, len(subs))
+	chans := make([]chan wire.Event, 0, len(subs))
 	for c := range subs {
 		chans = append(chans, c)
 	}
+	sink := b.OnPublish
 	b.mu.Unlock()
 	for _, c := range chans {
 		select {
-		case c <- e:
+		case c <- we:
 		default:
 			// drop on slow subscriber
 		}
+	}
+	// Fan out to observers (TurnStore). Run outside the lock so
+	// observers can take their own locks without deadlocking us.
+	if sink != nil {
+		sink(we)
 	}
 }
 
@@ -149,12 +185,19 @@ func (b *StreamingBus) Publish(sessionID string, e Event) {
 type Handler struct {
 	Orchestrator *Orchestrator
 	Bus          *StreamingBus
+	// TurnStore is the in-memory persistence layer for completed
+	// turns. The /perplexity/thread/:id endpoint reads from this to
+	// return full agent state (plan / steps / sources / reasoning)
+	// alongside the user/assistant text.
+	TurnStore *TurnStore
 
 	// Session cancel map: sessionID -> cancel func for in-flight runs.
 	cancelMu sync.Mutex
 	cancels  map[string]context.CancelFunc
 
-	// Thread message memory (server-side multi-turn).
+	// Thread message memory (server-side multi-turn). Kept for the
+	// legacy /perplexity/thread/:id callers — full state now lives
+	// in TurnStore.
 	threadMu   sync.RWMutex
 	threadMsgs map[string][]Message // threadID -> conversation turns
 
@@ -167,14 +210,20 @@ type Handler struct {
 }
 
 func NewHandler(orch *Orchestrator) *Handler {
+	bus := NewStreamingBus()
+	ts := NewTurnStore(bus)
 	h := &Handler{
 		Orchestrator:   orch,
-		Bus:            NewStreamingBus(),
+		Bus:            bus,
+		TurnStore:      ts,
 		cancels:        make(map[string]context.CancelFunc),
 		threadMsgs:     make(map[string][]Message),
 		rateHits:       make(map[string][]time.Time),
 		allowedOrigins: parseAllowedOrigins(os.Getenv("ANVIL_CORS_ORIGINS")),
 	}
+	// Wire the bus observer. Every published wire event lands in the
+	// TurnStore, which extracts TurnRecords at done time.
+	bus.OnPublish = ts.Record
 	return h
 }
 
@@ -360,7 +409,8 @@ func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request, sessionID
 	h.cancelMu.Unlock()
 	if ok && cancel != nil {
 		cancel()
-		h.Bus.Publish(sessionID, Event{
+		threadID := h.Bus.ThreadForSession(sessionID)
+		h.Bus.Publish(sessionID, threadID, Event{
 			Type:    EventError,
 			Payload: map[string]interface{}{"message": "cancelled by user", "code": "cancelled", "severity": "info", "recoverable": true, "retryable": true},
 		})
@@ -374,15 +424,29 @@ func (h *Handler) handleThread(w http.ResponseWriter, r *http.Request, threadID 
 		http.Error(w, "thread_id required", http.StatusBadRequest)
 		return
 	}
+	// Prefer the in-memory TurnStore (carries full agent state per
+	// turn). Fall back to the legacy text-only path if the store is
+	// missing (e.g. wired up wrong).
+	if h.TurnStore != nil {
+		turns := h.TurnStore.Turns(threadID)
+		resp := wire.ThreadHistoryResponse{
+			ThreadID:   threadID,
+			SessionIDs: h.TurnStore.SessionIDs(threadID),
+			Turns:      turns,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	// Legacy fallback (text-only messages).
 	sessions := h.Bus.ThreadSessions(threadID)
 	msgs := h.threadHistory(threadID)
-	// Build lightweight message DTOs for the client
 	outMsgs := make([]map[string]string, 0, len(msgs))
 	for _, m := range msgs {
 		outMsgs = append(outMsgs, map[string]string{"role": m.Role, "content": m.Content})
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"thread_id":   threadID,
 		"session_ids": sessions,
 		"messages":    outMsgs,
@@ -420,8 +484,9 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 		h.cancelMu.Unlock()
 	}()
 
-	// Emit a session.start event so the React SDK can render the user message
-	h.Bus.Publish(sessionID, Event{
+	// Emit a session.start event so the React SDK can render the user message.
+	// The wire bridge stamps it with thread_id, focus, and a stable event id.
+	h.Bus.Publish(sessionID, threadID, Event{
 		Type: "session.start",
 		Payload: map[string]interface{}{
 			"task":      question,
@@ -431,18 +496,18 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 	})
 
 	result, err := h.Orchestrator.Run(ctx, question, func(e Event) {
-		h.Bus.Publish(sessionID, e)
+		h.Bus.Publish(sessionID, threadID, e)
 	}, RunOpts{History: history, Focus: focus})
 	if err != nil {
 		if ctx.Err() != nil {
 			log.Printf("session %s: cancelled", sessionID)
-			h.Bus.Publish(sessionID, Event{Type: EventError, Payload: map[string]interface{}{
+			h.Bus.Publish(sessionID, threadID, Event{Type: EventError, Payload: map[string]interface{}{
 				"message": "cancelled", "code": "cancelled", "severity": "info", "retryable": true, "recoverable": true,
 			}})
 			return
 		}
 		log.Printf("session %s: error: %v", sessionID, err)
-		h.Bus.Publish(sessionID, Event{Type: EventError, Payload: map[string]interface{}{"message": err.Error()}})
+		h.Bus.Publish(sessionID, threadID, Event{Type: EventError, Payload: map[string]interface{}{"message": err.Error()}})
 		return
 	}
 	// Persist multi-turn memory
@@ -450,7 +515,7 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 
 	log.Printf("session %s (thread %s): done (answer=%d chars, sources=%d, related=%d)",
 		sessionID, threadID, len(result.Answer), len(result.Sources), len(result.Related))
-	h.Bus.Publish(sessionID, Event{Type: EventDone, Payload: map[string]interface{}{
+	h.Bus.Publish(sessionID, threadID, Event{Type: EventDone, Payload: map[string]interface{}{
 		"answer":     result.Answer,
 		"sources":    result.Sources,
 		"related":    result.Related,
@@ -491,8 +556,6 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "event: ready\ndata: {\"session_id\":\"%s\"}\n\n", sessionID)
 	flusher.Flush()
 
-	eventID := 0
-
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -503,12 +566,15 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			eventID++
-			if eventID <= skipCount {
+			// Skip events with id <= skipCount (?since=N support).
+			if int(e.EventID) <= skipCount {
 				continue
 			}
+			// e is wire.Event — emit as the canonical schema. The
+			// TypeScript client decodes this via fromWire() into the
+			// discriminated union, so payloads are typed end-to-end.
 			data, _ := json.Marshal(e)
-			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", eventID, e.Type, data)
+			fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", e.EventID, e.Type, data)
 			flusher.Flush()
 		case <-ticker.C:
 			fmt.Fprint(w, ": keepalive\n\n")

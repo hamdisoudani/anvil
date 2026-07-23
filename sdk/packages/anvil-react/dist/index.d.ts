@@ -21,7 +21,7 @@ export interface AnvilPerplexityProps {
     defaultFocus?: FocusMode;
 }
 export declare function AnvilPerplexity({ className, defaultFocus, }: AnvilPerplexityProps): import("react").JSX.Element;
-export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgentState, type AnvilEvent, type ChatMessage, } from "@anvil/react-headless";
+export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgentState, type AnvilEvent, type AnyAnvilEvent, type ChatMessage, } from "@anvil/react-headless";
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
 export { Conversation, ConversationContent, ConversationEmptyState } from "./components/ai-elements/conversation";
 export { Response } from "./components/ai-elements/response";

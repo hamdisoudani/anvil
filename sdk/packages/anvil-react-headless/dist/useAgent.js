@@ -50,11 +50,17 @@ export function useAgent(options = {}) {
     // Session lifecycle - use ref to avoid stale closures in the event handler
     const sessionRef = useRef(null);
     const onEvent = useCallback((e) => {
-        setSharedEvents((prev) => [...prev, e]);
-        onEventCb?.(e);
-        if (e.type === "error")
+        // Narrow once at the SDK boundary. Unknown event types come
+        // through the SSE pipe for forward-compatibility — the reducer
+        // never crashes on them, the consumer never sees them.
+        if ("_unknown" in e)
+            return;
+        const ev = e;
+        setSharedEvents((prev) => [...prev, ev]);
+        onEventCb?.(ev);
+        if (ev.type === "error")
             onStatusChange?.("error");
-        if (e.type === "done")
+        if (ev.type === "done")
             onStatusChange?.("done");
     }, [onEventCb, onStatusChange]);
     // Handle tool calls — both server tools and frontend tools (interrupts)

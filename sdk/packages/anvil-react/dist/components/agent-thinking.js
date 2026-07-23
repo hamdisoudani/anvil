@@ -144,13 +144,20 @@ const ExpandedBody = React.memo(function ExpandedBody({ view, showSteps, showSou
 const PlanSection = React.memo(function PlanSection({ plan, }) {
     if (!plan)
         return null;
-    const subQueries = plan.sub_queries;
+    // Snake→camel migration — schema now uses camelCase consistently.
+    // Both fields live on `plan` either as declared or via the
+    // index-signature pass-through that the wire may surface; we
+    // tolerate both.
+    const subQueries = plan.subQueries ??
+        plan.sub_queries;
+    const synthHint = plan.synthesizeHint ??
+        plan.synthesize_hint;
     const hasSubQueries = Array.isArray(subQueries) && subQueries.length > 0;
     const hasReason = typeof plan.reason === "string" && plan.reason.length > 0;
-    const hasSynthHint = typeof plan.synthesize_hint === "string" && plan.synthesize_hint.length > 0;
+    const hasSynthHint = typeof synthHint === "string" && synthHint.length > 0;
     if (!hasSubQueries && !hasReason)
         return null;
-    return (_jsxs("div", { className: "space-y-2", children: [hasReason && (_jsxs("div", { className: "rounded-md bg-muted/40 px-2.5 py-2", children: [_jsx("p", { className: "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1", children: "Plan" }), _jsx("p", { className: "text-xs sm:text-sm text-foreground/90 leading-relaxed", children: plan.reason }), hasSynthHint && (_jsxs("p", { className: "mt-1.5 text-[11px] text-muted-foreground", children: ["Answer style: ", plan.synthesize_hint] }))] })), hasSubQueries && _jsx(SubQueryList, { queries: subQueries })] }));
+    return (_jsxs("div", { className: "space-y-2", children: [hasReason && (_jsxs("div", { className: "rounded-md bg-muted/40 px-2.5 py-2", children: [_jsx("p", { className: "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1", children: "Plan" }), _jsx("p", { className: "text-xs sm:text-sm text-foreground/90 leading-relaxed", children: plan.reason }), hasSynthHint && (_jsxs("p", { className: "mt-1.5 text-[11px] text-muted-foreground", children: ["Answer style: ", synthHint] }))] })), hasSubQueries && _jsx(SubQueryList, { queries: subQueries })] }));
 });
 const SubQueryList = React.memo(function SubQueryList({ queries, }) {
     return (_jsxs("div", { className: "space-y-1.5", children: [_jsx("p", { className: "text-[10px] font-semibold uppercase tracking-wide text-muted-foreground", children: "Search queries" }), _jsx("ul", { className: "space-y-1.5", children: queries.map((q, i) => (_jsx(SubQueryRow, { query: q, index: i }, q.id ?? `q${i}`))) })] }));

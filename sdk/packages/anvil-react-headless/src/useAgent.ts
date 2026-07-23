@@ -42,6 +42,7 @@ import {
   useChat,
   useAgentState,
   type AnvilEvent,
+  type AnyAnvilEvent,
   type ChatMessage,
   type UseSessionResult,
   type AgentState,
@@ -170,11 +171,17 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   // Session lifecycle - use ref to avoid stale closures in the event handler
   const sessionRef = useRef<any>(null);
 
-  const onEvent = useCallback((e: AnvilEvent) => {
-    setSharedEvents((prev) => [...prev, e]);
-    onEventCb?.(e);
-    if (e.type === "error") onStatusChange?.("error");
-    if (e.type === "done") onStatusChange?.("done");
+  const onEvent = useCallback((e: AnyAnvilEvent) => {
+    // Narrow once at the SDK boundary. Unknown event types come
+    // through the SSE pipe for forward-compatibility — the reducer
+    // never crashes on them, the consumer never sees them.
+    if ("_unknown" in e) return;
+    const ev: AnvilEvent = e;
+
+    setSharedEvents((prev) => [...prev, ev]);
+    onEventCb?.(ev);
+    if (ev.type === "error") onStatusChange?.("error");
+    if (ev.type === "done") onStatusChange?.("done");
 
   }, [onEventCb, onStatusChange]);
 

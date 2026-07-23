@@ -29,6 +29,7 @@ import {
   useFrontendTool,
   useAgentState,
   type AnvilEvent,
+  type AnyAnvilEvent,
   type ChatMessage,
 } from "@anvil/react-headless";
 import { Button } from "./components/ui/button";
@@ -192,7 +193,7 @@ export function AnvilPerplexity({
 }: AnvilPerplexityProps) {
   // SHARED EVENT STREAM — single source of truth for the active thread.
   // Follow-up turns APPEND events; only newThread()/URL switch clears.
-  const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
+  const [sharedEvents, setSharedEvents] = useState<AnyAnvilEvent[]>([]);
   const [threadId, setThreadId] = useState<string | null>(getThreadIdFromUrl);
   // Hydrated messages from localStorage when reopening a thread
   const [hydratedMessages, setHydratedMessages] = useState<ChatMessage[]>(() =>
@@ -910,6 +911,7 @@ export {
   useFrontendTool,
   useAgentState,
   type AnvilEvent,
+  type AnyAnvilEvent,
   type ChatMessage,
 } from "@anvil/react-headless";
 

@@ -15,8 +15,9 @@
  * Designed to be UI-agnostic. Bring your own components.
  */
 import { type ReactNode } from "react";
-import { AnvilClient, type AnvilEvent, type EventType, type Subscription, type ClientConfig } from "@anvil/client";
-export type { AnvilEvent, EventType, Subscription, ClientConfig };
+import { AnvilClient, type AnvilEvent, type AnyAnvilEvent, type EventType, type Subscription, type ClientConfig, type AgentPhase as AgentPhaseClient, type AgentSource as AgentSourceClient, type PlanStep as PlanStepClient, type PlanObject as PlanObjectClient, type PlanSubQuery as PlanSubQueryClient, type AgentState as AgentStateClient, reduceAgentStateFromEvents as canonicalReduceAgentStateFromEvents } from "@anvil/client";
+export type { AnvilEvent, AnyAnvilEvent, EventType, Subscription, ClientConfig, };
+export { canonicalReduceAgentStateFromEvents };
 /**
  * Structured error from the agent, emitted via the 'error' event.
  * Provides severity levels, recoverability hints, and optional
@@ -33,81 +34,28 @@ export type AgentError = {
 };
 /**
  * High-level phase of the agent's thinking loop.
- * Used by UIs to render appropriate indicators (spinners, progress bars, etc.).
+ * Re-exported from `@anvil/client` so callers get the same
+ * string literal union everywhere.
  */
-export type AgentPhase = "idle" | "planning" | "searching" | "reading" | "writing" | "done" | "error";
-/**
- * A single step in the agent's plan timeline.
- * Emitted as plan.step events from the server.
- */
-export interface PlanStep {
-    id: string;
-    intent: string;
-    status: "pending" | "running" | "done" | "error";
-    detail?: string;
-}
-/**
- * A source discovered and used by the agent.
- */
-export interface AgentSource {
-    id: number;
-    url: string;
-    title: string;
-    domain: string;
-}
-/**
- * A decomposed sub-query within the agent's search plan.
- */
-export interface PlanSubQuery {
-    id: string;
-    intent: string;
-    query: string;
-    source?: string;
-    year?: number;
-    fetch_top?: number;
-    depends_on?: string[];
-}
-/**
- * The plan object delivered via the show_plan_step frontend call.
- */
-export interface AgentPlan {
-    reason?: string;
-    needs_search?: boolean;
-    synthesize_hint?: string;
-    sub_queries?: PlanSubQuery[];
-    [key: string]: unknown;
-}
+export type AgentPhase = AgentPhaseClient;
+/** A single step in the agent's plan timeline. */
+export type PlanStep = PlanStepClient;
+/** A source discovered and used by the agent. */
+export type AgentSource = AgentSourceClient;
+/** A decomposed sub-query within the agent's search plan. */
+export type PlanSubQuery = PlanSubQueryClient;
+/** The plan object delivered via the show_plan_step frontend call. */
+export type AgentPlan = PlanObjectClient;
 /**
  * Full reactive agent state exposed by useAgentState.
- * Every field is derived from Anvil events — no imperative set calls.
+ *
+ * Extends the canonical wire AgentState (in @anvil/client) by
+ * adding the structured `error: AgentError | null` field. The
+ * wire `error: ErrorPayload | null` is normalized to `AgentError`
+ * so React components have a stable shape to render.
  */
-export interface AgentState {
-    /** Current high-level phase of the agent's thinking loop. */
-    phase: AgentPhase;
-    /** The original task/question that was submitted. */
-    task: string | null;
-    /** The active session ID. */
-    sessionId: string | null;
-    /** Timeline of plan.step events — every state transition, in order. */
-    planSteps: PlanStep[];
-    /** The last plan object received from the show_plan_step frontend call. */
-    plan: AgentPlan | null;
-    /** All sources discovered so far (deduplicated by URL). */
-    sources: AgentSource[];
-    /** Number of search steps completed (plan.step with search/find intent, status=done). */
-    searchesDone: number;
-    /** Number of page-reading steps completed (plan.step with read/extract intent, status=done). */
-    pagesRead: number;
-    /** Index into planSteps of the most recently received step. */
-    currentStepIndex: number;
-    /** Accumulated answer text from answer.chunk events. */
-    currentAnswer: string;
-    /** Whether the agent is actively streaming an answer. */
-    isStreaming: boolean;
-    /** Structured error info, if the agent encountered an error. */
+export interface AgentState extends AgentStateClient {
     error: AgentError | null;
-    /** Whether the terminal 'done' event has been received. */
-    doneReceived: boolean;
 }
 /**
  * Process a single Anvil event through the agent state reducer.
@@ -120,14 +68,14 @@ export interface AgentState {
  * @param event  A single AnvilEvent from the session stream.
  * @returns      The next AgentState.
  */
-export declare function reduceAgentState(state: AgentState, event: AnvilEvent<unknown>): AgentState;
+export declare function reduceAgentState(state: AgentState, event: AnyAnvilEvent): AgentState;
 /**
  * Reduce an array of AnvilEvents into a single AgentState.
  *
  * @param events  Ordered array of events (oldest first).
  * @returns       Final AgentState after processing all events.
  */
-export declare function reduceAgentStateFromEvents(events: AnvilEvent[]): AgentState;
+export declare function reduceAgentStateFromEvents(events: AnyAnvilEvent[]): AgentState;
 export interface UseAgentStateOptions {
     /**
      * Session ID to subscribe to. Ignored when `sharedEvents` is provided.
@@ -141,7 +89,7 @@ export interface UseAgentStateOptions {
      * recomended mode for composability — share one event stream
      * across multiple hooks (useChat, useAgentState, etc.).
      */
-    sharedEvents?: AnvilEvent[];
+    sharedEvents?: AnyAnvilEvent[];
 }
 /**
  * Subscribe to an Anvil session's raw events and derive a high-level
@@ -151,7 +99,7 @@ export interface UseAgentStateOptions {
  *
  * **sharedEvents mode** (recommended for composability):
  * ```tsx
- * const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
+ * const [sharedEvents, setSharedEvents] = useState<AnyAnvilEvent[]>([]);
  * const session = useSession({
  *   onEvent: (e) => setSharedEvents(prev => [...prev, e]),
  * });
@@ -201,7 +149,7 @@ export interface UseSessionOptions {
     /** Resume this session on mount. */
     sessionId?: string;
     /** Called on every event. */
-    onEvent?: (e: AnvilEvent) => void;
+    onEvent?: (e: AnyAnvilEvent) => void;
     /** Called when a frontend tool call needs to be executed. */
     onToolCall?: (call: {
         callId: string;
@@ -242,12 +190,14 @@ export interface UseSessionResult {
     lastEventId: number;
 }
 export declare function useSession(opts?: UseSessionOptions): UseSessionResult;
-export declare function useEvents<T = unknown>(sessionId: string | null, onEvent?: (e: AnvilEvent<T>) => void): {
-    events: AnvilEvent<T>[];
+export declare function useEvents(sessionId: string | null): {
+    events: AnyAnvilEvent[];
     clear: () => void;
     lastId: number;
 };
-export declare function useAnvilEvent<T = unknown>(sessionId: string | null, type: EventType, handler: (e: AnvilEvent<T>) => void): void;
+export declare function useAnvilEvent<T extends EventType>(sessionId: string | null, type: T, handler: (e: Extract<AnvilEvent, {
+    type: T;
+}>) => void): void;
 export declare function useFrontendTool<TInput = unknown, TOutput = unknown>(tool: FrontendToolExecutor<TInput, TOutput>): void;
 export interface ChatMessage {
     id: string;
@@ -271,7 +221,7 @@ export interface ChatMessage {
     /** Related questions from the agent (populated from show_related) */
     related?: string[];
 }
-export declare function useChat(sessionId: string | null, events?: AnvilEvent[]): {
+export declare function useChat(sessionId: string | null, events?: AnyAnvilEvent[]): {
     messages: ChatMessage[];
 };
 export { useAgent } from "./useAgent";
