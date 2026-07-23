@@ -2,6 +2,9 @@
 //
 // Supports any OpenAI-compatible LLM (NVIDIA NIM, OpenAI, Together, Groq, etc).
 //
+// Bump: 2026-07-23 13:05 UTC — cache-bust trigger for Railway BuildKit
+// to force re-COPY of cmd/ into /src/cmd/.
+//
 // Usage:
 //   export OPENAI_API_KEY=***         # required
 //   export OPENAI_BASE_URL=...        # optional (default: NVIDIA NIM)

@@ -27,7 +27,13 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY cmd/ ./cmd/
+# Copy Go sources. We list every main.go explicitly rather than relying on
+# `COPY cmd/ ./cmd/` because Railway's BuildKit sometimes serves a stale
+# cache layer for that pattern after a successful build, leaving /src/cmd/
+# empty on subsequent deploys and breaking `go build ./cmd/perplexity-server`.
+COPY cmd/perplexity-server/main.go ./cmd/perplexity-server/main.go
+COPY cmd/perplexity-server/api/ ./cmd/perplexity-server/api/
+COPY cmd/anvil-server/ ./cmd/anvil-server/
 COPY internal/ ./internal/
 # Copy frontend build output BEFORE go build so the embed picks it up.
 # This must come AFTER COPY internal/ so it overwrites any stale chat_app_dist.
