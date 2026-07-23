@@ -38,7 +38,7 @@ function ChatSurface() {
             },
           },
         },
-        execute: ({ tz }: { tz?: string }) =>
+        execute: async ({ tz }: { tz?: string }) =>
           tz
             ? new Date().toLocaleString("en-US", { timeZone: tz })
             : new Date().toLocaleString(),
@@ -57,7 +57,7 @@ function ChatSurface() {
           },
           required: ["color"],
         },
-        execute: ({ color }: { color: string }) => {
+        execute: async ({ color }: { color: string }) => {
           if (typeof window === "undefined") {
             return { applied: color, previous: null };
           }
