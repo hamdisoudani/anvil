@@ -200,7 +200,7 @@ func TestStreamingBus(t *testing.T) {
 	bus := NewStreamingBus()
 	ch := bus.Subscribe("session-1")
 
-	bus.Publish("session-1", Event{Type: EventDone, Payload: map[string]interface{}{"x": 1}})
+	bus.Publish("session-1", "thread-1", Event{Type: EventDone, Payload: map[string]interface{}{"x": 1}})
 
 	select {
 	case e := <-ch:
@@ -212,7 +212,7 @@ func TestStreamingBus(t *testing.T) {
 	}
 
 	bus.Unsubscribe("session-1", ch)
-	bus.Publish("session-1", Event{Type: EventDone, Payload: nil})
+	bus.Publish("session-1", "thread-1", Event{Type: EventDone, Payload: nil})
 	select {
 	case <-ch:
 		t.Fatal("should not receive after unsubscribe")

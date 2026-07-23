@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"strings"
 	"sync"
@@ -666,7 +665,6 @@ Rules:
 			Tools:        tools,
 			MaxTokens:    400,
 		}
-		log.Printf("frontend_tools round=%d tools=%d tool_names=%v", round, len(tools), toolNames(tools))
 		resp, err := o.LLM.Stream(ctx, req, nil)
 		if err != nil {
 			emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "error", err.Error()))
@@ -751,13 +749,4 @@ func (o *Orchestrator) findFrontendTool(name string) *FrontendTool {
 		}
 	}
 	return nil
-}
-
-// toolNames extracts the name list for debug logging.
-func toolNames(tools []Tool) []string {
-	out := make([]string, len(tools))
-	for i, t := range tools {
-		out[i] = t.Name
-	}
-	return out
 }
