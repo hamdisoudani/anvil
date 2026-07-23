@@ -22,7 +22,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/hamdisoudani/anvil/internal/perplexity"
 )
@@ -71,28 +70,12 @@ func main() {
 	fp := perplexity.NewFetchPageTool()
 	orch := perplexity.NewOrchestrator(llm, ws, fp)
 
-	// Register the demo frontend tool: change_background_color.
-	// The browser registers the matching handler via
-	// `useFrontendTool({ name: "change_background_color", ... })`
-	// and applies the color to the chat UI. This proves the
-	// full agent → tool.call → browser → tool.result → agent
-	// roundtrip.
-	colorTool := perplexity.NewFrontendTool(
-		"change_background_color",
-		"Change the chat UI's background color. Use when the user asks to recolor, theme, or restyle the chat interface.",
-		map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"color": map[string]interface{}{
-					"type":        "string",
-					"description": "CSS color value (hex, rgb(), hsl(), or named color). Examples: '#0b1220', 'darkblue', 'rgb(11,18,32)'.",
-				},
-			},
-			"required": []string{"color"},
-		},
-	)
-	colorTool.SetTimeout(30 * time.Second)
-	orch.WithFrontendTools(colorTool)
+	// NOTE: Frontend tools are NO LONGER hardcoded here.
+	// They are sent by the browser with each POST /tasks request
+	// (the `frontend_tools` array in the JSON body). The server
+	// builds per-session FrontendTool instances from the request
+	// and passes them to the orchestrator via RunOpts.FrontendTools.
+	// See handler.go:handleAsk + orchestrator.go:tryFrontendTools.
 
 	handler := perplexity.NewHandler(orch)
 

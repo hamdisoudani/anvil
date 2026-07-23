@@ -699,7 +699,7 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
 
   const start = useCallback(async (
     task: string,
-    opts?: { threadId?: string; focus?: string },
+    opts?: { threadId?: string; focus?: string; frontendTools?: Array<{ name: string; description: string; inputSchema: Record<string, any> }> },
   ) => {
     setStatus("starting");
     setError(null);

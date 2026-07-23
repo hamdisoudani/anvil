@@ -212,6 +212,12 @@ type Handler struct {
 	pendingMu      sync.Mutex
 	pendingFrontend map[string]*FrontendTool
 
+	// sessionTools: sessionID -> []*FrontendTool sent by the browser
+	// for this task. Used by the event callback to find the right
+	// tool when routing browser deliveries.
+	sessionTools   map[string][]*FrontendTool
+	sessionToolsMu sync.Mutex
+
 	// CORS allowlist; empty = reflect request Origin (dev). Set ANVIL_CORS_ORIGINS.
 	allowedOrigins map[string]struct{}
 }
@@ -227,6 +233,7 @@ func NewHandler(orch *Orchestrator) *Handler {
 		threadMsgs:      make(map[string][]Message),
 		rateHits:        make(map[string][]time.Time),
 		pendingFrontend: make(map[string]*FrontendTool),
+		sessionTools:    make(map[string][]*FrontendTool),
 		allowedOrigins:  parseAllowedOrigins(os.Getenv("ANVIL_CORS_ORIGINS")),
 	}
 	// Wire the bus observer. Every published wire event lands in the
@@ -366,10 +373,15 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Question string `json:"question,omitempty"`
-		Task     string `json:"task,omitempty"`
-		ThreadID string `json:"thread_id,omitempty"`
-		Focus    string `json:"focus,omitempty"`
+		Question       string `json:"question,omitempty"`
+		Task           string `json:"task,omitempty"`
+		ThreadID       string `json:"thread_id,omitempty"`
+		Focus          string `json:"focus,omitempty"`
+		FrontendTools  []struct {
+			Name        string                 `json:"name"`
+			Description string                 `json:"description"`
+			InputSchema  map[string]interface{} `json:"input_schema"`
+		} `json:"frontend_tools,omitempty"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
 		http.Error(w, "bad json", http.StatusBadRequest)
@@ -398,7 +410,15 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 	h.cancelMu.Unlock()
 
 	history := h.threadHistory(threadID)
-	go h.runSearch(ctx, sessionID, threadID, question, req.Focus, history)
+	// Build per-session FrontendTool instances from the request.
+	// These override any hardcoded tools on the Orchestrator.
+	var sessionFrontendTools []*FrontendTool
+	for _, ft := range req.FrontendTools {
+		t := NewFrontendTool(ft.Name, ft.Description, ft.InputSchema)
+		t.SetTimeout(60 * time.Second)
+		sessionFrontendTools = append(sessionFrontendTools, t)
+	}
+	go h.runSearch(ctx, sessionID, threadID, question, req.Focus, history, sessionFrontendTools)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -533,8 +553,17 @@ func (h *Handler) appendThreadTurn(threadID, question, answer string) {
 }
 
 // runSearch runs the orchestrator and publishes events to the bus.
-func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, focus string, history []Message) {
+func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, focus string, history []Message, sessionFrontendTools []*FrontendTool) {
+	// Store session tools so the event callback can find them
+	// for pending-tool routing.
+	h.sessionToolsMu.Lock()
+	h.sessionTools[sessionID] = sessionFrontendTools
+	h.sessionToolsMu.Unlock()
 	defer func() {
+		h.sessionToolsMu.Lock()
+		delete(h.sessionTools, sessionID)
+		h.sessionToolsMu.Unlock()
+
 		h.cancelMu.Lock()
 		delete(h.cancels, sessionID)
 		h.cancelMu.Unlock()
@@ -558,21 +587,27 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 			if callID, ok := e.Payload["id"].(string); ok {
 				if name, ok := e.Payload["name"].(string); ok {
 					if isFrontend, ok := e.Payload["is_frontend"].(bool); ok && isFrontend {
-						if tool := h.Orchestrator.findFrontendTool(name); tool != nil {
+						// Search session tools first, then hardcoded.
+						var tool *FrontendTool
+						h.sessionToolsMu.Lock()
+						if tools, ok := h.sessionTools[sessionID]; ok {
+							tool = findFrontendToolIn(tools, name)
+						}
+						h.sessionToolsMu.Unlock()
+						if tool == nil {
+							tool = h.Orchestrator.findFrontendTool(name)
+						}
+						if tool != nil {
 							h.pendingMu.Lock()
 							h.pendingFrontend[callID] = tool
 							h.pendingMu.Unlock()
-							// The tool already registered a pending slot
-							// in tryFrontendTools — that's the one we
-							// wait on. The handler map is for delivery
-							// routing only.
 						}
 					}
 				}
 			}
 		}
 		h.Bus.Publish(sessionID, threadID, e)
-	}, RunOpts{History: history, Focus: focus})
+	}, RunOpts{History: history, Focus: focus, FrontendTools: sessionFrontendTools})
 	if err != nil {
 		if ctx.Err() != nil {
 			log.Printf("session %s: cancelled", sessionID)

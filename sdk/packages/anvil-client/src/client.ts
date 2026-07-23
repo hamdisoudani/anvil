@@ -59,11 +59,18 @@ export class AnvilClient {
    */
   async startTask(
     task: string,
-    opts?: { threadId?: string; focus?: string },
+    opts?: { threadId?: string; focus?: string; frontendTools?: Array<{ name: string; description: string; inputSchema: Record<string, any> }> },
   ): Promise<{ sessionId: string; threadId: string; streamUrl: string }> {
-    const body: Record<string, string> = { task, question: task };
+    const body: Record<string, unknown> = { task, question: task };
     if (opts?.threadId) body.thread_id = opts.threadId;
     if (opts?.focus) body.focus = opts.focus;
+    if (opts?.frontendTools && opts.frontendTools.length > 0) {
+      body.frontend_tools = opts.frontendTools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }));
+    }
     const r = await this.config.fetch(`${this.config.baseUrl}/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

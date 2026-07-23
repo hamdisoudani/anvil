@@ -63,16 +63,15 @@ func TestOrchestrator_TryFrontendTools_Roundtrip(t *testing.T) {
 
 	// 3. Run the frontend-tool step in a goroutine so we can
 	// deliver the browser result while it's blocked.
-	ctx := context.Background()
 	events := make(chan Event, 32)
 	var finalText string
 	var finalErr error
 	doneCh := make(chan struct{})
 
 	go func() {
-		text, err := orch.tryFrontendTools(ctx, "change bg to darkblue", func(e Event) {
+		text, err := orch.tryFrontendTools(context.Background(), "change bg to darkblue", func(e Event) {
 			events <- e
-		}, nil)
+		}, nil, []*FrontendTool{colorTool})
 		finalText = text
 		finalErr = err
 		close(doneCh)
@@ -151,7 +150,7 @@ func TestOrchestrator_TryFrontendTools_NoToolsRegistered(t *testing.T) {
 	mock := &mockLLMRouter{}
 	orch := NewOrchestrator(mock, nil, nil) // no frontend tools
 
-	text, err := orch.tryFrontendTools(context.Background(), "anything", func(Event) {}, nil)
+	text, err := orch.tryFrontendTools(context.Background(), "anything", func(Event) {}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

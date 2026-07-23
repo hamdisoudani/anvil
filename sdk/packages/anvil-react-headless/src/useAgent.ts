@@ -165,6 +165,23 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   const [pendingInterrupt, setPendingInterrupt] = useState<PendingInterrupt | null>(null);
   const pendingInterruptRef = useRef<PendingInterrupt | null>(null);
 
+  // Extract tool specs (name, description, inputSchema) from the
+  // developer's `tools` map. These are sent to the server so the LLM
+  // knows which frontend tools are available. The `execute` functions
+  // stay in the browser — only the metadata travels.
+  const frontendToolSpecs = useMemo(() => {
+    return Object.entries(toolHandlers).map(([name, def]) => {
+      if (typeof def === "function") {
+        return { name, description: "", inputSchema: { type: "object", properties: {} } };
+      }
+      return {
+        name,
+        description: def.description ?? "",
+        inputSchema: def.inputSchema ?? { type: "object", properties: {} },
+      };
+    });
+  }, [toolHandlers]);
+
   // Track active tool calls (callId → resolvers) for frontend tools
   const activeToolCalls = useRef<Map<string, { resolve: (v: any) => void; reject: (e: any) => void }>>(new Map());
 
@@ -282,6 +299,7 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
         const result = await startRef.current?.(text, {
           ...(tid ? { threadId: tid } : {}),
           ...(opts?.focus ? { focus: opts.focus } : {}),
+          ...(frontendToolSpecs.length > 0 ? { frontendTools: frontendToolSpecs } : {}),
         });
         if (result) {
           threadIdRef.current = result.threadId;

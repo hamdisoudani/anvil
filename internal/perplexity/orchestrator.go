@@ -53,8 +53,14 @@ func (o *Orchestrator) frontendToolSpecs() []Tool {
 	if len(o.FrontendTools) == 0 {
 		return nil
 	}
-	out := make([]Tool, 0, len(o.FrontendTools))
-	for _, t := range o.FrontendTools {
+	return frontendToolSpecsFrom(o.FrontendTools)
+}
+
+// frontendToolSpecsFrom converts a list of FrontendTool instances to
+// []Tool specs for the LLM.
+func frontendToolSpecsFrom(tools []*FrontendTool) []Tool {
+	out := make([]Tool, 0, len(tools))
+	for _, t := range tools {
 		out = append(out, Tool{
 			Name:        t.Name(),
 			Description: t.Description(),
@@ -62,6 +68,16 @@ func (o *Orchestrator) frontendToolSpecs() []Tool {
 		})
 	}
 	return out
+}
+
+// findFrontendToolIn searches a list of FrontendTool instances by name.
+func findFrontendToolIn(tools []*FrontendTool, name string) *FrontendTool {
+	for _, t := range tools {
+		if t.Name() == name {
+			return t
+		}
+	}
+	return nil
 }
 
 // LLMRouter is the interface we need.
@@ -113,6 +129,9 @@ type RunOpts struct {
 	History []Message
 	// Focus maps to preferred SourceKind: web|academic|news|reddit|youtube.
 	Focus string
+	// FrontendTools are browser-side tools sent by the client with the
+	// task. They override any tools hardcoded on the Orchestrator.
+	FrontendTools []*FrontendTool
 }
 
 // planStep is a small helper to emit a PlanStep event with string ID.
@@ -176,7 +195,7 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	// search/synthesize. Useful for "change background to dark blue"
 	// style requests where the user wants immediate UI feedback.
 	// When no frontend tools are registered this is a no-op.
-	if _, err := o.tryFrontendTools(ctx, question, onEvent, opts.History); err != nil {
+	if _, err := o.tryFrontendTools(ctx, question, onEvent, opts.History, opts.FrontendTools); err != nil {
 		// Non-fatal — log and continue with the main flow.
 		emit(EventError, map[string]interface{}{
 			"message": err.Error(),
@@ -624,8 +643,25 @@ func (o *Orchestrator) tryFrontendTools(
 	question string,
 	onEvent func(Event),
 	history []Message,
+	sessionTools []*FrontendTool,
 ) (string, error) {
-	if len(o.FrontendTools) == 0 {
+	// Merge: session-supplied tools take priority over hardcoded ones.
+	// Build a map of hardcoded tools by name, then overlay session tools.
+	allTools := make([]*FrontendTool, 0, len(o.FrontendTools)+len(sessionTools))
+	seen := make(map[string]bool)
+	for _, t := range sessionTools {
+		if !seen[t.Name()] {
+			allTools = append(allTools, t)
+			seen[t.Name()] = true
+		}
+	}
+	for _, t := range o.FrontendTools {
+		if !seen[t.Name()] {
+			allTools = append(allTools, t)
+			seen[t.Name()] = true
+		}
+	}
+	if len(allTools) == 0 {
 		return "", nil
 	}
 
@@ -654,7 +690,7 @@ Rules:
 	}
 	msgs = append(msgs, Message{Role: "user", Content: question})
 
-	tools := o.frontendToolSpecs()
+	tools := frontendToolSpecsFrom(allTools)
 
 	// Loop up to N rounds in case the LLM wants multiple tools.
 	const maxRounds = 3
@@ -679,7 +715,7 @@ Rules:
 
 		// Execute each tool call (typically just one per round).
 		for _, tc := range resp.ToolCalls {
-			tool := o.findFrontendTool(tc.Name)
+			tool := findFrontendToolIn(allTools, tc.Name)
 			if tool == nil {
 				// Unknown tool — emit a no-op tool.result so the
 				// LLM can recover.
