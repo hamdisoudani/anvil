@@ -232,4 +232,6 @@ export { AnvilShell, useAnvilShell, useAnvilShellOptional, } from "./shell";
 export type { ShellStorage, ShellRouting, ThreadMeta, ThreadData, AnvilShellContextValue, AnvilShellProps, } from "./shell";
 export { AgentProvider, useAgentContext, useAgentContextOptional, } from "./agent-context";
 export type { AgentProviderProps } from "./agent-context";
+export { CheckpointProvider, useCheckpoint, useCheckpointOptional, } from "./checkpoint";
+export type { CheckpointContextValue, CheckpointProviderProps, } from "./checkpoint";
 //# sourceMappingURL=index.d.ts.map

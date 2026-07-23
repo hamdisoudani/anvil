@@ -244,12 +244,16 @@ export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgent
 // Pluggable shell (storage + routing)
 AnvilShell, useAnvilShell, useAnvilShellOptional, 
 // Shared agent context
-AgentProvider, useAgentContext, useAgentContextOptional, } from "@anvil/react-headless";
+AgentProvider, useAgentContext, useAgentContextOptional, 
+// Checkpoint persistence + resume
+CheckpointProvider, useCheckpoint, useCheckpointOptional, } from "@anvil/react-headless";
 // Pure reducers + custom-reducer registry — escape hatch for domain
 // events and pre-built pure transforms. Imported directly from
 // @anvil/client (framework-agnostic) so consumers don't have to depend
 // on React-headless for the data layer.
-export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, } from "@anvil/client";
+export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, 
+// Checkpoint stores (LangGraph-style) + factories
+createCheckpointStore, captureCheckpoint, resumeFromCheckpoint, InMemoryCheckpointStore, LocalStorageCheckpointStore, RemoteCheckpointStore, } from "@anvil/client";
 // AI Elements components
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
 export { Conversation, ConversationContent, ConversationEmptyState } from "./components/ai-elements/conversation";

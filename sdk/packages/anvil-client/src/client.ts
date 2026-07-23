@@ -15,6 +15,7 @@ import {
   type AnvilEventWire,
   type ClientConfig,
   type Subscription,
+  type SubscriptionLifecycle,
   type FrontendToolCall,
   type SessionStatus,
   type ThreadHistoryResponse,
@@ -22,7 +23,10 @@ import {
 } from "./schema";
 
 export class AnvilClient {
-  private config: Required<ClientConfig>;
+  private config: Required<Omit<ClientConfig, "reconnect" | "onLifecycle">> & {
+    reconnect: Required<NonNullable<ClientConfig["reconnect"]>>;
+    onLifecycle?: (event: SubscriptionLifecycle) => void;
+  };
 
   constructor(config: ClientConfig) {
     this.config = {
@@ -34,6 +38,15 @@ export class AnvilClient {
       onServerDrop: config.onServerDrop ?? (() => {}),
       onSubscriberDrop: config.onSubscriberDrop ?? (() => {}),
       baseUrl: config.baseUrl.replace(/\/$/, ""),
+      reconnect: {
+        initialDelayMs: 1000,
+        maxDelayMs: 30000,
+        backoffMultiplier: 2,
+        jitter: 0.5,
+        maxAttempts: Infinity,
+        ...(config.reconnect ?? {}),
+      },
+      onLifecycle: config.onLifecycle,
     };
   }
 
@@ -154,10 +167,18 @@ export class AnvilClient {
   /**
    * Subscribe to events for a session. Returns a Subscription handle.
    *
-   * Handles reconnection with Last-Event-ID automatically — if the
-   * connection drops, we reconnect with `?since=<last id>` and the
-   * server replays any missed events. Events are mapped from wire
-   * format to the discriminated union via `fromWire`.
+   * Reconnect strategy (LangGraph-grade):
+   *   1. Open EventSource. If `lastEventId > 0`, append `?since=<id>` so
+   *      the server replays the missed tail.
+   *   2. On open → emit lifecycle `open`. Reset backoff to `initial`.
+   *   3. On error → close the EventSource, compute delay =
+   *      `min(maxDelayMs, initialDelayMs * multiplier^attempt) * jitter`,
+   *      emit `reconnecting`, schedule a retry.
+   *   4. If `attempt >= maxAttempts`, emit `failed` and stop.
+   *   5. On unsubscribe → emit `closed`.
+   *
+   * The native EventSource `auto-reconnect` would lose the `since=`
+   * query parameter, so we drive it manually.
    */
   subscribe<T = unknown>(
     sessionId: string,
@@ -168,9 +189,18 @@ export class AnvilClient {
     let closed = false;
     let lastId = 0;
     let count = 0;
+    let attempt = 0;
     let state: "connecting" | "open" | "closed" = "connecting";
-    let retryMs = 1000;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const emit = (event: SubscriptionLifecycle) => {
+      try {
+        this.config.onLifecycle?.(event);
+      } catch (err) {
+        // Lifecycle callbacks must not break the subscription.
+        console.error("anvil: lifecycle callback threw", err);
+      }
+    };
 
     const handle = (e: MessageEvent) => {
       try {
@@ -200,34 +230,81 @@ export class AnvilClient {
       }
     };
 
+    /**
+     * Compute the next backoff delay with jitter.
+     * `delay = min(maxDelayMs, initial * multiplier^attempt) * jitterFactor`
+     * where `jitterFactor = (1 - jitter) + jitter * random()`.
+     * Jitter spreads retries across many clients recovering at once.
+     */
+    const computeDelay = (): number => {
+      const { initialDelayMs, maxDelayMs, backoffMultiplier, jitter } =
+        this.config.reconnect;
+      const base = Math.min(
+        maxDelayMs,
+        initialDelayMs * Math.pow(backoffMultiplier, attempt - 1),
+      );
+      const jitterFactor =
+        jitter <= 0 ? 1 : 1 - jitter + jitter * Math.random();
+      return Math.round(base * jitterFactor);
+    };
+
     const connect = (since = lastId) => {
       if (closed) return;
+      attempt++;
       state = "connecting";
       try {
         es?.close();
       } catch {
         /* ignore */
       }
+
+      if (attempt > this.config.reconnect.maxAttempts) {
+        emit({
+          kind: "failed",
+          attempts: attempt - 1,
+          cause: "max attempts exceeded",
+        });
+        return;
+      }
+      emit({ kind: "connecting", attempt });
+
       const u = since > 0 ? `${base}?since=${since}` : base;
       const newEs = new this.config.EventSource!(u);
       es = newEs;
 
       newEs.onopen = () => {
         state = "open";
-        retryMs = 1000; // reset backoff
+        // Reset backoff for the next failure cycle.
+        attempt = 0;
+        emit({ kind: "open", attempt: 1, resumedFrom: since });
       };
-      newEs.onerror = () => {
+
+      newEs.onerror = (err: unknown) => {
         if (closed) return;
         state = "connecting";
+        const cause =
+          err && typeof err === "object"
+            ? `EventSource error: ${JSON.stringify({
+                type: (err as { type?: string }).type,
+              })}`
+            : "EventSource error";
         try {
           es?.close();
         } catch {
           /* ignore */
         }
+
+        // Compute backoff with jitter, then schedule a retry.
+        const delay = computeDelay();
+        emit({
+          kind: "reconnecting",
+          attempt,
+          delayMs: delay,
+          cause,
+        });
+
         if (reconnectTimer) clearTimeout(reconnectTimer);
-        const wait = retryMs;
-        retryMs = Math.min(retryMs * 2, 8000);
-        reconnectTimer = setTimeout(() => connect(lastId), wait);
+        reconnectTimer = setTimeout(() => connect(lastId), delay);
       };
 
       for (const t of EVENT_TYPES) {
@@ -243,11 +320,17 @@ export class AnvilClient {
         closed = true;
         state = "closed";
         if (reconnectTimer) clearTimeout(reconnectTimer);
-        es?.close();
+        try {
+          es?.close();
+        } catch {
+          /* ignore */
+        }
+        emit({ kind: "closed" });
       },
       count: () => count,
       lastEventId: () => lastId,
       state: () => state,
+      attempt: () => attempt,
     };
   }
 }

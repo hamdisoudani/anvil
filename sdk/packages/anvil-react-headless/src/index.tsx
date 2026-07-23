@@ -1052,3 +1052,14 @@ export {
   useAgentContextOptional,
 } from "./agent-context";
 export type { AgentProviderProps } from "./agent-context";
+
+// ── Checkpoint (persist + resume agent state) ───────────────────────
+export {
+  CheckpointProvider,
+  useCheckpoint,
+  useCheckpointOptional,
+} from "./checkpoint";
+export type {
+  CheckpointContextValue,
+  CheckpointProviderProps,
+} from "./checkpoint";

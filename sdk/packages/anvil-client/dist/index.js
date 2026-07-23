@@ -24,6 +24,7 @@
  *   go run ./scripts/wire-gen > schema.generated.ts
  */
 export { AnvilClient } from "./client";
+export { createCheckpointStore, captureCheckpoint, resumeFromCheckpoint, InMemoryCheckpointStore, LocalStorageCheckpointStore, RemoteCheckpointStore, } from "./checkpoint";
 export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, __clearCustomReducers, } from "./reducers";
 export { INITIAL_AGENT_STATE } from "./types/agent-state";
 // Catch-all re-export of the schema module so consumers can import

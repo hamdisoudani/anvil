@@ -24,7 +24,9 @@
  *   go run ./scripts/wire-gen > schema.generated.ts
  */
 export { AnvilClient } from "./client";
-export type { ClientConfig, Subscription, FrontendToolCall, SessionStatus, } from "./schema";
+export type { ClientConfig, Subscription, SubscriptionLifecycle, ReconnectOptions, FrontendToolCall, SessionStatus, } from "./schema";
+export { createCheckpointStore, captureCheckpoint, resumeFromCheckpoint, InMemoryCheckpointStore, LocalStorageCheckpointStore, RemoteCheckpointStore, } from "./checkpoint";
+export type { Checkpoint, CheckpointStore, CheckpointStoreConfig, } from "./checkpoint";
 export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, __clearCustomReducers, } from "./reducers";
 export type { CustomEventHandler } from "./reducers";
 export { INITIAL_AGENT_STATE } from "./types/agent-state";

@@ -858,6 +858,10 @@ export {
   AgentProvider,
   useAgentContext,
   useAgentContextOptional,
+  // Checkpoint persistence + resume
+  CheckpointProvider,
+  useCheckpoint,
+  useCheckpointOptional,
   type AnvilEvent,
   type AnyAnvilEvent,
   type ChatMessage,
@@ -865,6 +869,8 @@ export {
   type ShellRouting,
   type ThreadMeta,
   type ThreadData,
+  type CheckpointContextValue,
+  type CheckpointProviderProps,
 } from "@anvil/react-headless";
 
 // Pure reducers + custom-reducer registry — escape hatch for domain
@@ -880,8 +886,20 @@ export {
   threadToEvents,
   registerReducer,
   listCustomReducers,
+  // Checkpoint stores (LangGraph-style) + factories
+  createCheckpointStore,
+  captureCheckpoint,
+  resumeFromCheckpoint,
+  InMemoryCheckpointStore,
+  LocalStorageCheckpointStore,
+  RemoteCheckpointStore,
 } from "@anvil/client";
 export type { CustomEventHandler } from "@anvil/client";
+export type {
+  Checkpoint,
+  CheckpointStore,
+  CheckpointStoreConfig,
+} from "@anvil/client";
 
 // AI Elements components
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";

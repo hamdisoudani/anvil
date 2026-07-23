@@ -36,9 +36,10 @@ export interface AnvilPerplexityProps {
  * <AgentProvider> so descendants can share the agent via context.
  */
 export declare function AnvilPerplexity({ className, defaultFocus, storage, routing, }: AnvilPerplexityProps): import("react").JSX.Element;
-export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgentState, AnvilShell, useAnvilShell, useAnvilShellOptional, AgentProvider, useAgentContext, useAgentContextOptional, type AnvilEvent, type AnyAnvilEvent, type ChatMessage, type ShellStorage, type ShellRouting, type ThreadMeta, type ThreadData, } from "@anvil/react-headless";
-export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, } from "@anvil/client";
+export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgentState, AnvilShell, useAnvilShell, useAnvilShellOptional, AgentProvider, useAgentContext, useAgentContextOptional, CheckpointProvider, useCheckpoint, useCheckpointOptional, type AnvilEvent, type AnyAnvilEvent, type ChatMessage, type ShellStorage, type ShellRouting, type ThreadMeta, type ThreadData, type CheckpointContextValue, type CheckpointProviderProps, } from "@anvil/react-headless";
+export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, createCheckpointStore, captureCheckpoint, resumeFromCheckpoint, InMemoryCheckpointStore, LocalStorageCheckpointStore, RemoteCheckpointStore, } from "@anvil/client";
 export type { CustomEventHandler } from "@anvil/client";
+export type { Checkpoint, CheckpointStore, CheckpointStoreConfig, } from "@anvil/client";
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
 export { Conversation, ConversationContent, ConversationEmptyState } from "./components/ai-elements/conversation";
 export { Response, type ResponseSource } from "./components/ai-elements/response";

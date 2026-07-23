@@ -358,6 +358,61 @@ export type AnyAnvilEvent = AnvilEvent | UnknownAnvilEvent;
 
 // ── Client / subscription types ─────────────────────────────────────
 
+/**
+ * Lifecycle event emitted by the SSE subscription. Surface these to
+ * the user via `onLifecycle` to show "Reconnecting…", "Offline",
+ * "Reconnected" banners in the UI.
+ */
+export type SubscriptionLifecycle =
+  /** Initial connection attempt started. */
+  | { kind: "connecting"; attempt: number }
+  /** Connection established — events are flowing. */
+  | { kind: "open"; attempt: number; resumedFrom: number }
+  /**
+   * Connection lost; retrying after `delayMs`. `attempt` is the
+   * attempt that JUST failed (so the next attempt will be attempt+1).
+   */
+  | { kind: "reconnecting"; attempt: number; delayMs: number; cause: string }
+  /** Permanently failed — `maxAttempts` reached. UI should show offline. */
+  | { kind: "failed"; attempts: number; cause: string }
+  /** User called `unsubscribe()`. */
+  | { kind: "closed" };
+
+/**
+ * Reconnection strategy. Defaults:
+ *   - initial delay:        1000ms
+ *   - max delay:            30000ms (cap the exponential)
+ *   - backoff multiplier:   2x
+ *   - jitter:               0.5 (50% of computed delay — random)
+ *   - max attempts:         Infinity (never give up by default)
+ *
+ * Set `maxAttempts` to a finite number for strict environments (e.g.
+ * a CI test that needs to surface failures as errors).
+ */
+export interface ReconnectOptions {
+  /** First delay before retrying. Default 1000ms. */
+  initialDelayMs?: number;
+  /** Cap on the per-attempt delay. Default 30000ms. */
+  maxDelayMs?: number;
+  /** Multiplier applied to the delay on each failure. Default 2. */
+  backoffMultiplier?: number;
+  /**
+   * Jitter factor in [0, 1). The actual delay becomes
+   * `computed * (1 - jitter + jitter * random())`. Default 0.5 —
+   * spreads retries across clients to avoid the thundering herd
+   * when a flaky network comes back for many subscribers at once.
+   */
+  jitter?: number;
+  /**
+   * Max attempts before giving up. Default Infinity — the SSE
+   * stream stays open forever (typical browser UX). Set to a
+   * finite number when you want to surface hard failures (CI,
+   * integration tests, embedded viewers that should stop and
+   * let the user retry manually).
+   */
+  maxAttempts?: number;
+}
+
 /** Configuration for the Anvil HTTP/SSE client. */
 export interface ClientConfig {
   /** Base URL of the Anvil HTTP server. */
@@ -370,14 +425,29 @@ export interface ClientConfig {
   onServerDrop?: (event: AnvilEvent) => void;
   /** Called when a subscriber drop marker arrives. */
   onSubscriberDrop?: (event: AnvilEvent) => void;
+  /** Reconnection tuning (backoff, jitter, max attempts). */
+  reconnect?: ReconnectOptions;
+  /**
+   * Subscribe to SSE lifecycle events. Useful for showing
+   * "Reconnecting…" / "Offline" indicators in the UI.
+   */
+  onLifecycle?: (event: SubscriptionLifecycle) => void;
 }
 
-/** Subscription handle returned by `AnvilClient.subscribe`. */
+/**
+ * Subscription handle returned by `AnvilClient.subscribe`.
+ *
+ * Note: `state()` now reports a broader lifecycle than the original
+ * `connecting | open | closed`. The string values are unchanged for
+ * backward compat; the new states are reachable via `onLifecycle`.
+ */
 export interface Subscription {
   unsubscribe: () => void;
   count: () => number;
   lastEventId: () => number;
   state: () => "connecting" | "open" | "closed";
+  /** Latest attempt number (1-based). Useful for UI badges. */
+  attempt: () => number;
 }
 
 /** Live status snapshot for an in-flight session. */

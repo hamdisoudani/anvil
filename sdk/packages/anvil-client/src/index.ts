@@ -28,9 +28,25 @@ export { AnvilClient } from "./client";
 export type {
   ClientConfig,
   Subscription,
+  SubscriptionLifecycle,
+  ReconnectOptions,
   FrontendToolCall,
   SessionStatus,
 } from "./schema";
+
+export {
+  createCheckpointStore,
+  captureCheckpoint,
+  resumeFromCheckpoint,
+  InMemoryCheckpointStore,
+  LocalStorageCheckpointStore,
+  RemoteCheckpointStore,
+} from "./checkpoint";
+export type {
+  Checkpoint,
+  CheckpointStore,
+  CheckpointStoreConfig,
+} from "./checkpoint";
 
 export {
   reduceAgentState,

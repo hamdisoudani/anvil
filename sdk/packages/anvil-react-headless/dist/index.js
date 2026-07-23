@@ -726,4 +726,6 @@ export { useAgent } from "./useAgent";
 export { AnvilShell, useAnvilShell, useAnvilShellOptional, } from "./shell";
 // ── Agent context (share an agent across components) ────────────────
 export { AgentProvider, useAgentContext, useAgentContextOptional, } from "./agent-context";
+// ── Checkpoint (persist + resume agent state) ───────────────────────
+export { CheckpointProvider, useCheckpoint, useCheckpointOptional, } from "./checkpoint";
 //# sourceMappingURL=index.js.map
