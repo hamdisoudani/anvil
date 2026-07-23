@@ -419,7 +419,6 @@ func (h *Handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 		sessionFrontendTools = append(sessionFrontendTools, t)
 	}
 	go h.runSearch(ctx, sessionID, threadID, question, req.Focus, history, sessionFrontendTools)
-	log.Printf("session %s: started tools=%d names=%v", sessionID, len(sessionFrontendTools), frontendToolNames(sessionFrontendTools))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
