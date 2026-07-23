@@ -27,13 +27,14 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-# Copy Go sources. We list every main.go explicitly rather than relying on
-# `COPY cmd/ ./cmd/` because Railway's BuildKit sometimes serves a stale
-# cache layer for that pattern after a successful build, leaving /src/cmd/
-# empty on subsequent deploys and breaking `go build ./cmd/perplexity-server`.
-COPY cmd/perplexity-server/main.go ./cmd/perplexity-server/main.go
-COPY cmd/perplexity-server/api/ ./cmd/perplexity-server/api/
-COPY cmd/anvil-server/ ./cmd/anvil-server/
+# Copy Go sources. We use `COPY cmd/ ./cmd/` but precede it with a dummy
+# RUN that touches a marker file. Railway's BuildKit is known to serve
+# stale cache layers for `COPY cmd/ ./cmd/` after a successful build,
+# leaving /src/cmd/ empty on subsequent deploys and breaking
+# `go build ./cmd/perplexity-server`. The marker forces cache invalidation.
+ARG RAILWAY_CACHE_BUST=2026-07-23-13-15
+RUN echo "$RAILWAY_CACHE_BUST" > /tmp/cache_bust.txt
+COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 # Copy frontend build output BEFORE go build so the embed picks it up.
 # This must come AFTER COPY internal/ so it overwrites any stale chat_app_dist.
