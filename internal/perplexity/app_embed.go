@@ -89,7 +89,7 @@ func (h *Handler) handleApp(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 	}
 	if !strings.HasSuffix(embedPath, ".html") {
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Cache-Control", "public, max-age=60, must-revalidate")
 	}
 
 	// For index.html, rewrite asset paths so the browser requests them

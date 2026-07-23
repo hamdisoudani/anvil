@@ -32,7 +32,7 @@ RUN go mod download
 # stale cache layers for `COPY cmd/ ./cmd/` after a successful build,
 # leaving /src/cmd/ empty on subsequent deploys and breaking
 # `go build ./cmd/perplexity-server`. The marker forces cache invalidation.
-ARG RAILWAY_CACHE_BUST=2026-07-23-13-31
+ARG RAILWAY_CACHE_BUST=2026-07-23-15-25
 RUN echo "$RAILWAY_CACHE_BUST" > /tmp/cache_bust.txt
 COPY cmd/ ./cmd/
 # Post-COPY marker inside cmd/ — invalidates any cache layer that might
