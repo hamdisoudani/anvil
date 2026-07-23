@@ -2,7 +2,7 @@
 //
 // Supports any OpenAI-compatible LLM (NVIDIA NIM, OpenAI, Together, Groq, etc).
 //
-// Bump: 2026-07-23 13:05 UTC — cache-bust trigger for Railway BuildKit
+// Bump: 2026-07-23 13:31 UTC — cache-bust trigger for Railway BuildKit
 // to force re-COPY of cmd/ into /src/cmd/.
 //
 // Usage:
