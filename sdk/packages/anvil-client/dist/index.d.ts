@@ -17,6 +17,11 @@
  *   - `agentStateFromTurns`        — hydrate TurnRecord[] → AgentState
  *   - `messagesFromTurns`          — hydrate TurnRecord[] → ChatMessage[]
  *   - `ThreadHistoryResponse`      — full thread state from server
+ *
+ * Schema source-of-truth: `internal/core/wire/events.go` (Go).
+ * The TS types in `./schema` mirror that file. To regenerate the
+ * generated payload interfaces from the Go source, run:
+ *   go run ./scripts/wire-gen > schema.generated.ts
  */
 export { AnvilClient } from "./client";
 export type { ClientConfig, Subscription, FrontendToolCall, SessionStatus, } from "./schema";

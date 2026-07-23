@@ -259,6 +259,8 @@ export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-e
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
 export { ErrorBanner } from "./components/ai-elements/error-banner";
+export { ToolResult } from "./components/ai-elements/tool-result";
+export { ThreadList, useThreadListToggle } from "./components/ai-elements/thread-list";
 // InterruptDialog — human-in-the-loop UI for frontend tool calls
 export { InterruptDialog } from "./components/interrupt-dialog";
 // Unified Agent hook

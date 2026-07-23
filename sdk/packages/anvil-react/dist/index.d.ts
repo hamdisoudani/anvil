@@ -41,12 +41,14 @@ export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, a
 export type { CustomEventHandler } from "@anvil/client";
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
 export { Conversation, ConversationContent, ConversationEmptyState } from "./components/ai-elements/conversation";
-export { Response } from "./components/ai-elements/response";
+export { Response, type ResponseSource } from "./components/ai-elements/response";
 export { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai-elements/sources";
 export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-elements/reasoning";
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
 export { ErrorBanner } from "./components/ai-elements/error-banner";
+export { ToolResult, type ToolResultProps } from "./components/ai-elements/tool-result";
+export { ThreadList, useThreadListToggle, type ThreadListRendererProps } from "./components/ai-elements/thread-list";
 export { InterruptDialog } from "./components/interrupt-dialog";
 export type { InterruptLike, InterruptDialogRendererProps, InterruptDialogProps, } from "./components/interrupt-dialog";
 export { useAgent } from "@anvil/react-headless";

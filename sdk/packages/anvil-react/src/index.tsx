@@ -886,12 +886,14 @@ export type { CustomEventHandler } from "@anvil/client";
 // AI Elements components
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
 export { Conversation, ConversationContent, ConversationEmptyState } from "./components/ai-elements/conversation";
-export { Response } from "./components/ai-elements/response";
+export { Response, type ResponseSource } from "./components/ai-elements/response";
 export { Sources, SourcesTrigger, SourcesContent, Source } from "./components/ai-elements/sources";
 export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-elements/reasoning";
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
 export { ErrorBanner } from "./components/ai-elements/error-banner";
+export { ToolResult, type ToolResultProps } from "./components/ai-elements/tool-result";
+export { ThreadList, useThreadListToggle, type ThreadListRendererProps } from "./components/ai-elements/thread-list";
 
 // InterruptDialog — human-in-the-loop UI for frontend tool calls
 export { InterruptDialog } from "./components/interrupt-dialog";
