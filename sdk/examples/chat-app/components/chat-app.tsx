@@ -37,8 +37,48 @@ function ChatSurface() {
         : new Date().toLocaleString(),
   });
 
+  // Register the change_background_color tool. The server's
+  // frontend tool definition matches this signature. When the
+  // agent decides the user wants to restyle the UI, it calls
+  // this tool with a CSS color; we apply it to <html> so the
+  // entire chat surface flips. The handler returns the applied
+  // color so the agent can confirm in its reply.
+  useFrontendTool<{ color: string }, { applied: string; previous: string | null }>({
+    name: "change_background_color",
+    description:
+      "Change the chat UI's background color. Use whenever the user asks to recolor, theme, or restyle the chat interface.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        color: {
+          type: "string",
+          description:
+            "CSS color value (hex, rgb(), hsl(), or named color). Examples: '#0b1220', 'darkblue', 'rgb(11,18,32)'.",
+        },
+      },
+      required: ["color"],
+    },
+    execute: ({ color }) => {
+      if (typeof window === "undefined") {
+        return { applied: color, previous: null };
+      }
+      const previous = document.documentElement.style.getPropertyValue(
+        "--anvil-bg",
+      );
+      document.documentElement.style.setProperty("--anvil-bg", color);
+      return { applied: color, previous: previous || null };
+    },
+  });
+
   const agent = useAgent();
-  return <ChatUI agent={agent} className="h-full" title="Anvil Chat" />;
+  return (
+    <div
+      className="h-full"
+      style={{ background: "var(--anvil-bg, transparent)" }}
+    >
+      <ChatUI agent={agent} className="h-full" title="Anvil Chat" />
+    </div>
+  );
 }
 
 export function ChatApp({ baseUrl }: { baseUrl: string }) {

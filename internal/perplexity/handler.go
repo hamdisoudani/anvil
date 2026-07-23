@@ -205,6 +205,13 @@ type Handler struct {
 	rateMu   sync.Mutex
 	rateHits map[string][]time.Time
 
+	// pendingFrontendTools: callID -> FrontendTool waiting for a
+	// browser delivery. Populated by handleAsk (which knows the
+	// tool def) when emitting tool.call; looked up by handleTool
+	// when the browser POSTs back the result.
+	pendingMu      sync.Mutex
+	pendingFrontend map[string]*FrontendTool
+
 	// CORS allowlist; empty = reflect request Origin (dev). Set ANVIL_CORS_ORIGINS.
 	allowedOrigins map[string]struct{}
 }
@@ -213,13 +220,14 @@ func NewHandler(orch *Orchestrator) *Handler {
 	bus := NewStreamingBus()
 	ts := NewTurnStore(bus)
 	h := &Handler{
-		Orchestrator:   orch,
-		Bus:            bus,
-		TurnStore:      ts,
-		cancels:        make(map[string]context.CancelFunc),
-		threadMsgs:     make(map[string][]Message),
-		rateHits:       make(map[string][]time.Time),
-		allowedOrigins: parseAllowedOrigins(os.Getenv("ANVIL_CORS_ORIGINS")),
+		Orchestrator:    orch,
+		Bus:             bus,
+		TurnStore:       ts,
+		cancels:         make(map[string]context.CancelFunc),
+		threadMsgs:      make(map[string][]Message),
+		rateHits:        make(map[string][]time.Time),
+		pendingFrontend: make(map[string]*FrontendTool),
+		allowedOrigins:  parseAllowedOrigins(os.Getenv("ANVIL_CORS_ORIGINS")),
 	}
 	// Wire the bus observer. Every published wire event lands in the
 	// TurnStore, which extracts TurnRecords at done time.
@@ -264,6 +272,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sid := strings.TrimPrefix(path, "/sessions/")
 		sid = strings.TrimSuffix(sid, "/cancel")
 		h.handleCancel(w, r, sid)
+	case strings.HasPrefix(path, "/sessions/") && strings.HasSuffix(path, "/tool") && r.Method == "POST":
+		sid := strings.TrimPrefix(path, "/sessions/")
+		sid = strings.TrimSuffix(sid, "/tool")
+		h.handleTool(w, r, sid)
 	case strings.HasPrefix(path, "/perplexity/cancel/") && r.Method == "POST":
 		sid := strings.TrimPrefix(path, "/perplexity/cancel/")
 		h.handleCancel(w, r, sid)
@@ -415,8 +427,52 @@ func (h *Handler) handleCancel(w http.ResponseWriter, r *http.Request, sessionID
 			Payload: map[string]interface{}{"message": "cancelled by user", "code": "cancelled", "severity": "info", "recoverable": true, "retryable": true},
 		})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "cancelled": ok})
+}
+
+// handleTool receives a frontend-tool result from the browser and
+// delivers it to the FrontendTool that was waiting. The wire format
+// matches the legacy server tool endpoint:
+//
+//	POST /sessions/{id}/tool
+//	{ "call_id": "...", "result": {...}, "error": "..." }
+//
+// Called by AnvilClient.deliverToolResult() on the TS side after a
+// useFrontendTool handler returns.
+func (h *Handler) handleTool(w http.ResponseWriter, r *http.Request, sessionID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	type req struct {
+		CallID string          `json:"call_id"`
+		Result json.RawMessage `json:"result"`
+		Error  string          `json:"error"`
+	}
+	var body req
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad json", http.StatusBadRequest)
+		return
+	}
+	if body.CallID == "" {
+		http.Error(w, "call_id required", http.StatusBadRequest)
+		return
+	}
+	h.pendingMu.Lock()
+	tool, ok := h.pendingFrontend[body.CallID]
+	if ok {
+		delete(h.pendingFrontend, body.CallID)
+	}
+	h.pendingMu.Unlock()
+	if !ok {
+		// Unknown / already delivered / expired. Reply 200 so the
+		// browser doesn't retry.
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, `{"ok":true,"note":"call_id not pending"}`)
+		return
+	}
+	tool.DeliverResult(body.CallID, body.Result, body.Error)
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, `{"ok":true}`)
 }
 
 func (h *Handler) handleThread(w http.ResponseWriter, r *http.Request, threadID string) {
@@ -496,6 +552,25 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 	})
 
 	result, err := h.Orchestrator.Run(ctx, question, func(e Event) {
+		// If this is a frontend tool call, register the pending
+		// tool by call_id so handleTool can deliver the result.
+		if e.Type == EventToolCall {
+			if callID, ok := e.Payload["id"].(string); ok {
+				if name, ok := e.Payload["name"].(string); ok {
+					if isFrontend, ok := e.Payload["is_frontend"].(bool); ok && isFrontend {
+						if tool := h.Orchestrator.findFrontendTool(name); tool != nil {
+							h.pendingMu.Lock()
+							h.pendingFrontend[callID] = tool
+							h.pendingMu.Unlock()
+							// The tool already registered a pending slot
+							// in tryFrontendTools — that's the one we
+							// wait on. The handler map is for delivery
+							// routing only.
+						}
+					}
+				}
+			}
+		}
 		h.Bus.Publish(sessionID, threadID, e)
 	}, RunOpts{History: history, Focus: focus})
 	if err != nil {

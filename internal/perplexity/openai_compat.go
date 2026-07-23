@@ -196,6 +196,16 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 	var fullText strings.Builder
 	usage := TokenUsage{}
 	stopReason := "stop"
+	// toolCalls accumulates function/tool_calls across streamed deltas.
+	// OpenAI streams the tool call as a series of deltas where each
+	// delta carries an indexed fragment. We re-assemble by index.
+	type toolCallAccum struct {
+		ID       string
+		Name     string
+		ArgsJSON strings.Builder
+	}
+	var toolCalls []toolCallAccum
+	currentToolIdx := -1
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -213,10 +223,61 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 		if data == "[DONE]" {
 			break
 		}
+		// Parse with tool_calls field (OpenAI streaming format).
 		var chunk sseChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue // skip malformed chunks
 		}
+
+		// Use a separate struct with tool_calls because the simple
+		// sseChunk above doesn't include it.
+		var raw map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(data), &raw)
+		if rawChoices, ok := raw["choices"]; ok {
+			var rawChoiceList []struct {
+				Delta struct {
+					Content   string          `json:"content"`
+					ToolCalls []map[string]any `json:"tool_calls"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			}
+			if err := json.Unmarshal(rawChoices, &rawChoiceList); err == nil {
+				for _, choice := range rawChoiceList {
+					if choice.FinishReason != "" {
+						stopReason = choice.FinishReason
+					}
+					for _, tc := range choice.Delta.ToolCalls {
+						// Index key — may be absent in single-tool responses.
+						idx := currentToolIdx
+						if v, ok := tc["index"]; ok {
+							if f, ok := v.(float64); ok {
+								idx = int(f)
+							}
+						}
+						if idx < 0 || idx >= len(toolCalls) {
+							// New tool call slot.
+							if idx > currentToolIdx {
+								currentToolIdx = idx
+							}
+							toolCalls = append(toolCalls, toolCallAccum{})
+							idx = len(toolCalls) - 1
+						}
+						if v, ok := tc["id"].(string); ok && v != "" {
+							toolCalls[idx].ID = v
+						}
+						if fn, ok := tc["function"].(map[string]any); ok {
+							if name, ok := fn["name"].(string); ok && name != "" {
+								toolCalls[idx].Name = name
+							}
+							if args, ok := fn["arguments"].(string); ok && args != "" {
+								toolCalls[idx].ArgsJSON.WriteString(args)
+							}
+						}
+					}
+				}
+			}
+		}
+
 		if chunk.Usage != nil {
 			usage = *chunk.Usage
 		}
@@ -233,8 +294,27 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 		}
 	}
 
+	// Convert accumulated tool calls to the wire format.
+	var responseToolCalls []ToolCall
+	for i, tc := range toolCalls {
+		args := tc.ArgsJSON.String()
+		if args == "" {
+			args = "{}"
+		}
+		id := tc.ID
+		if id == "" {
+			id = fmt.Sprintf("call_%d", i)
+		}
+		responseToolCalls = append(responseToolCalls, ToolCall{
+			ID:    id,
+			Name:  tc.Name,
+			Input: json.RawMessage(args),
+		})
+	}
+
 	return LLMResponse{
 		Content:    fullText.String(),
+		ToolCalls:  responseToolCalls,
 		StopReason: stopReason,
 		Usage:      usage,
 	}, nil
