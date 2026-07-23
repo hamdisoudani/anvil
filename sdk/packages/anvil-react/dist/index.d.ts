@@ -19,9 +19,26 @@ type FocusMode = (typeof FOCUS_MODES)[number]["id"];
 export interface AnvilPerplexityProps {
     className?: string;
     defaultFocus?: FocusMode;
+    /**
+     * Override thread storage backend. Defaults to localStorage.
+     * Pass a custom `ShellStorage` to use a remote DB.
+     */
+    storage?: import("@anvil/react-headless").ShellStorage;
+    /**
+     * Override URL routing strategy. Defaults to hash routing.
+     * Pass a custom `ShellRouting` for pathname / query string / no-op.
+     */
+    routing?: import("@anvil/react-headless").ShellRouting;
 }
-export declare function AnvilPerplexity({ className, defaultFocus, }: AnvilPerplexityProps): import("react").JSX.Element;
-export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgentState, type AnvilEvent, type AnyAnvilEvent, type ChatMessage, } from "@anvil/react-headless";
+/**
+ * Public AnvilPerplexity — wraps the inner implementation with
+ * <AnvilShell> for pluggable thread storage + routing and
+ * <AgentProvider> so descendants can share the agent via context.
+ */
+export declare function AnvilPerplexity({ className, defaultFocus, storage, routing, }: AnvilPerplexityProps): import("react").JSX.Element;
+export { AnvilProvider, useAnvil, useSession, useChat, useFrontendTool, useAgentState, AnvilShell, useAnvilShell, useAnvilShellOptional, AgentProvider, useAgentContext, useAgentContextOptional, type AnvilEvent, type AnyAnvilEvent, type ChatMessage, type ShellStorage, type ShellRouting, type ThreadMeta, type ThreadData, } from "@anvil/react-headless";
+export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, } from "@anvil/client";
+export type { CustomEventHandler } from "@anvil/client";
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
 export { Conversation, ConversationContent, ConversationEmptyState } from "./components/ai-elements/conversation";
 export { Response } from "./components/ai-elements/response";
@@ -30,6 +47,8 @@ export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-e
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
 export { ErrorBanner } from "./components/ai-elements/error-banner";
+export { InterruptDialog } from "./components/interrupt-dialog";
+export type { InterruptLike, InterruptDialogRendererProps, InterruptDialogProps, } from "./components/interrupt-dialog";
 export { useAgent } from "@anvil/react-headless";
 export type { ToolHandler, UseAgentOptions, UseAgentReturn, PendingInterrupt, AgentError } from "@anvil/react-headless";
 export { AgentUI } from "./components/agent-ui";

@@ -34,7 +34,11 @@ export {
   agentStateFromTurns,
   messagesFromTurns,
   threadToEvents,
+  registerReducer,
+  listCustomReducers,
+  __clearCustomReducers,
 } from "./reducers";
+export type { CustomEventHandler } from "./reducers";
 export { INITIAL_AGENT_STATE } from "./types/agent-state";
 export type {
   AgentPhase,

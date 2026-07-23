@@ -17,6 +17,8 @@
 import { type ReactNode } from "react";
 import { AnvilClient, type AnvilEvent, type AnyAnvilEvent, type EventType, type Subscription, type ClientConfig, type AgentPhase as AgentPhaseClient, type AgentSource as AgentSourceClient, type PlanStep as PlanStepClient, type PlanObject as PlanObjectClient, type PlanSubQuery as PlanSubQueryClient, type AgentState as AgentStateClient, reduceAgentStateFromEvents as canonicalReduceAgentStateFromEvents } from "@anvil/client";
 export type { AnvilEvent, AnyAnvilEvent, EventType, Subscription, ClientConfig, };
+export { agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, } from "@anvil/client";
+export type { CustomEventHandler } from "@anvil/client";
 export { canonicalReduceAgentStateFromEvents };
 /**
  * Structured error from the agent, emitted via the 'error' event.
@@ -226,4 +228,8 @@ export declare function useChat(sessionId: string | null, events?: AnyAnvilEvent
 };
 export { useAgent } from "./useAgent";
 export type { ToolHandler, ToolDefinition, ToolRenderer, UseAgentOptions, UseAgentReturn, PendingInterrupt } from "./useAgent";
+export { AnvilShell, useAnvilShell, useAnvilShellOptional, } from "./shell";
+export type { ShellStorage, ShellRouting, ThreadMeta, ThreadData, AnvilShellContextValue, AnvilShellProps, } from "./shell";
+export { AgentProvider, useAgentContext, useAgentContextOptional, } from "./agent-context";
+export type { AgentProviderProps } from "./agent-context";
 //# sourceMappingURL=index.d.ts.map

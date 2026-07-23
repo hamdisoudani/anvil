@@ -20,7 +20,8 @@
  */
 export { AnvilClient } from "./client";
 export type { ClientConfig, Subscription, FrontendToolCall, SessionStatus, } from "./schema";
-export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, } from "./reducers";
+export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, __clearCustomReducers, } from "./reducers";
+export type { CustomEventHandler } from "./reducers";
 export { INITIAL_AGENT_STATE } from "./types/agent-state";
 export type { AgentPhase, AgentPlan as AgentPlanCanonical, AgentState, PlanSubQuery, } from "./types/agent-state";
 export type { ChatMessage, PlanStep, AgentSource, TurnRecord, ThreadHistoryResponse, } from "./schema";

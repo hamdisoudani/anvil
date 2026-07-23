@@ -19,6 +19,19 @@ export type { AgentSource, PlanStep } from "../schema";
 /** @deprecated Use SubQuery from "../schema". */
 export type PlanSubQuery = NonNullable<PlanObject["subQueries"]>[number];
 
+/**
+ * High-level phase of the agent's thinking loop.
+ *
+ * OPEN UNION: The SDK ships standard phases (idle / planning / searching /
+ * reading / writing / done / error) so you get autocomplete for the
+ * common cases. But you can set `phase` to ANY string — e.g.
+ * `"awaiting_review"`, `"composing_email"`, `"translating"` — and the
+ * reducer will accept it. The `(string & {})` branded string trick
+ * preserves autocomplete for the literals while allowing extensions.
+ *
+ * The reducer never CRASHES on an unknown phase. It just stores it.
+ * Custom UI can then branch on `state.phase === "awaiting_review"`.
+ */
 export type AgentPhase =
   | "idle"
   | "planning"
@@ -26,7 +39,8 @@ export type AgentPhase =
   | "reading"
   | "writing"
   | "done"
-  | "error";
+  | "error"
+  | (string & {});
 
 export interface AgentPlan {
   /** Why the agent chose this plan. */
@@ -72,6 +86,30 @@ export interface AgentState {
   error: ErrorPayload | null;
   /** Whether the terminal 'done' event has been received. */
   doneReceived: boolean;
+
+  /**
+   * Extension slot for domain-specific state.
+   *
+   * The SDK doesn't read or write this field — it's YOUR free-form
+   * scratch space. Useful for:
+   *   - tracking per-turn costs / token counts from a custom reducer
+   *   - storing user preferences discovered mid-conversation
+   *   - adding domain flags (e.g. `needsApproval`, `confidenceScore`)
+   *
+   * To populate it, register a custom reducer for your event type:
+   *
+   * ```ts
+   * import { registerReducer } from "@anvil/client";
+   * registerReducer("cost.update", (state, event) => ({
+   *   ...state,
+   *   extensions: {
+   *     ...state.extensions,
+   *     costSoFar: (event.payload as { usd: number }).usd,
+   *   },
+   * }));
+   * ```
+   */
+  extensions?: Record<string, unknown>;
 }
 
 export const INITIAL_AGENT_STATE: AgentState = {
@@ -90,4 +128,5 @@ export const INITIAL_AGENT_STATE: AgentState = {
   isStreaming: false,
   error: null,
   doneReceived: false,
+  extensions: {},
 };

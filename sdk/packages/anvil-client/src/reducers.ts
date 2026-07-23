@@ -19,6 +19,7 @@
 
 import {
   type AnvilEvent,
+  type AnyAnvilEvent,
   type ChatMessage,
   type PlanStep,
   type AgentSource,
@@ -72,43 +73,132 @@ function derivePhase(state: AgentState): AgentPhase {
   return state.phase === "idle" ? "idle" : "planning";
 }
 
+// ── Custom reducer registry (extension point) ──────────────────────
+
+/**
+ * A custom reducer is a pure function that takes the current
+ * AgentState and a custom event (any shape with at least a `type`
+ * string and a `payload`) and returns the next state. Use this when
+ * your agent emits custom event types not in the canonical schema.
+ *
+ * ```ts
+ * import { registerReducer } from "@anvil/client";
+ *
+ * registerReducer("cost.update", (state, event) => ({
+ *   ...state,
+ *   extensions: {
+ *     ...state.extensions,
+ *     costSoFar: (event.payload as { usd: number }).usd,
+ *   },
+ * }));
+ * ```
+ */
+export type CustomEventHandler = (
+  state: AgentState,
+  event: { type: string; payload: unknown },
+) => AgentState;
+
+const customReducers = new Map<string, CustomEventHandler>();
+
+/**
+ * Register a custom reducer for a specific event type. Custom
+ * reducers run AFTER the canonical reducer for known events. For
+ * unknown event types, they're the only reducer.
+ *
+ * Idempotent: calling registerReducer twice with the same type
+ * replaces the previous handler (no leak).
+ */
+export function registerReducer(
+  type: string,
+  handler: CustomEventHandler,
+): () => void {
+  customReducers.set(type, handler);
+  return () => {
+    if (customReducers.get(type) === handler) {
+      customReducers.delete(type);
+    }
+  };
+}
+
+/**
+ * Test/dev only: clear all custom reducers. Not for production use —
+ * custom reducers are global.
+ */
+export function __clearCustomReducers(): void {
+  customReducers.clear();
+}
+
+/**
+ * Read-only snapshot of the current custom reducer registry.
+ * Useful for debugging and testing.
+ */
+export function listCustomReducers(): string[] {
+  return Array.from(customReducers.keys());
+}
+
 // ── Live reducer (event log → AgentState) ───────────────────────────
 
 /**
  * Reduce a single event into the next AgentState. Pure function.
+ *
+ * Behavior:
+ *   - Known event types: dispatched via the canonical cases below.
+ *   - Unknown event types (no `type` in EVENT_TYPES, or marked
+ *     `_unknown` from `fromWire`): if a custom reducer is registered
+ *     for that type, it's called. Otherwise, the event is dropped
+ *     (state unchanged).
+ *
+ * The return type is intentionally `AgentState` (not narrowed). Custom
+ * reducers can return any subset that satisfies AgentState.
  */
 export function reduceAgentState(
   state: AgentState,
-  event: AnvilEvent,
+  event: AnyAnvilEvent | { type: string; payload: unknown },
 ): AgentState {
+  // Custom reducer hook — runs BEFORE canonical handling so devs can
+  // intercept events with their own logic. (If your custom reducer
+  // returns the same shape as the canonical one, the canonical one
+  // will still run — register custom logic for unknown types to avoid
+  // double-handling.)
+  const custom = customReducers.get(event.type);
+  if (custom) {
+    state = custom(state, event);
+  }
+  // From here on, narrow to AnyAnvilEvent for the canonical cases
+  // below. For custom event shapes (no eventId/sessionId/etc), the
+  // type guards reject them and we return state unchanged.
+  if (!("eventId" in event)) {
+    return state;
+  }
+  const e = event as AnyAnvilEvent;
   // session.start resets transient state but PRESERVES planSteps,
   // sources, and reasoning (so multi-turn history stays intact).
-  if (isSessionStart(event)) {
+  if (isSessionStart(e)) {
     return {
       ...INITIAL_AGENT_STATE,
       phase: "planning",
-      task: event.payload.task,
-      threadId: event.payload.threadId,
-      sessionId: event.sessionId,
+      task: e.payload.task,
+      threadId: e.payload.threadId,
+      sessionId: e.sessionId,
     };
   }
 
-  if (isThinkChunk(event)) {
+  if (isThinkChunk(e)) {
     return {
       ...state,
-      currentReasoning: state.currentReasoning + event.payload.delta,
+      currentReasoning: state.currentReasoning + e.payload.delta,
     };
   }
 
-  if (isThinkEnd(event)) {
+  if (isThinkEnd(e)) {
     return {
       ...state,
-      currentReasoning: event.payload.text || state.currentReasoning,
+      currentReasoning: e.payload.text || state.currentReasoning,
     };
   }
 
-  if (isPlanStep(event)) {
-    const step = event.payload.step;
+  if (isPlanStep(e)) {
+    const step = e.payload.step;
     // Replace any existing step with the same id (status updates),
     // otherwise append.
     const idx = state.planSteps.findIndex((s) => s.id === step.id);
@@ -135,55 +225,55 @@ export function reduceAgentState(
     };
   }
 
-  if (isPlanSet(event)) {
+  if (isPlanSet(e)) {
     const plan: AgentPlan = {
-      reason: event.payload.plan.reason,
-      synthesizeHint: event.payload.plan.synthesizeHint,
-      needsSearch: event.payload.plan.needsSearch,
-      subQueries: event.payload.plan.subQueries ?? [],
+      reason: e.payload.plan.reason,
+      synthesizeHint: e.payload.plan.synthesizeHint,
+      needsSearch: e.payload.plan.needsSearch,
+      subQueries: e.payload.plan.subQueries ?? [],
     };
     return { ...state, plan };
   }
 
-  if (isSourcesFound(event)) {
-    return { ...state, sources: event.payload.sources };
+  if (isSourcesFound(e)) {
+    return { ...state, sources: e.payload.sources };
   }
 
-  if (isAnswerChunk(event)) {
+  if (isAnswerChunk(e)) {
     return {
       ...state,
       isStreaming: true,
-      currentAnswer: state.currentAnswer + event.payload.delta,
+      currentAnswer: state.currentAnswer + e.payload.delta,
     };
   }
 
-  if (isAnswerEnd(event)) {
+  if (isAnswerEnd(e)) {
     return {
       ...state,
       isStreaming: false,
-      currentAnswer: event.payload.text || state.currentAnswer,
+      currentAnswer: e.payload.text || state.currentAnswer,
     };
   }
 
-  if (isErrorEvent(event)) {
-    return { ...state, error: event.payload };
+  if (isErrorEvent(e)) {
+    return { ...state, error: e.payload };
   }
 
-  if (isDone(event)) {
+  if (isDone(e)) {
     return {
       ...state,
       doneReceived: true,
       isStreaming: false,
       // Done may carry the final answer; merge if we missed any chunks.
-      currentAnswer: state.currentAnswer || event.payload.answer || "",
-      sources: event.payload.sources ?? state.sources,
+      currentAnswer: state.currentAnswer || e.payload.answer || "",
+      sources: e.payload.sources ?? state.sources,
       // Final plan may also be delivered with done.
-      plan: event.payload.plan
+      plan: e.payload.plan
         ? {
-            reason: event.payload.plan.reason,
-            synthesizeHint: event.payload.plan.synthesizeHint,
-            needsSearch: event.payload.plan.needsSearch,
-            subQueries: event.payload.plan.subQueries ?? [],
+            reason: e.payload.plan.reason,
+            synthesizeHint: e.payload.plan.synthesizeHint,
+            needsSearch: e.payload.plan.needsSearch,
+            subQueries: e.payload.plan.subQueries ?? [],
           }
         : state.plan,
     };

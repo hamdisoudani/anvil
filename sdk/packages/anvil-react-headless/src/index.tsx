@@ -55,6 +55,20 @@ export type {
   Subscription,
   ClientConfig,
 };
+
+// Pure reducers (framework-agnostic, escape hatch for domain logic).
+// NOTE: reduceAgentState / reduceAgentStateFromEvents / reduceEventsToMessages
+// are also defined locally in this file (kept as the canonical React-side
+// version). The exports below add the custom-reducer registry + thread
+// hydration reducers that don't have local equivalents.
+export {
+  agentStateFromTurns,
+  messagesFromTurns,
+  threadToEvents,
+  registerReducer,
+  listCustomReducers,
+} from "@anvil/client";
+export type { CustomEventHandler } from "@anvil/client";
 export { canonicalReduceAgentStateFromEvents };
 
 // ── Agent Error Type ──────────────────────────────────────────
@@ -1015,3 +1029,26 @@ export function useChat(sessionId: string | null, events?: AnyAnvilEvent[]) {
 // ── Unified Agent Hook ──────────────────────────────────────────
 export { useAgent } from "./useAgent";
 export type { ToolHandler, ToolDefinition, ToolRenderer, UseAgentOptions, UseAgentReturn, PendingInterrupt } from "./useAgent";
+
+// ── Shell (pluggable storage + routing) ────────────────────────────
+export {
+  AnvilShell,
+  useAnvilShell,
+  useAnvilShellOptional,
+} from "./shell";
+export type {
+  ShellStorage,
+  ShellRouting,
+  ThreadMeta,
+  ThreadData,
+  AnvilShellContextValue,
+  AnvilShellProps,
+} from "./shell";
+
+// ── Agent context (share an agent across components) ────────────────
+export {
+  AgentProvider,
+  useAgentContext,
+  useAgentContextOptional,
+} from "./agent-context";
+export type { AgentProviderProps } from "./agent-context";

@@ -129,8 +129,16 @@ export interface PlanStep {
   intent: string;
   /** Granular detail (e.g. "fetching result 3 of 7"). */
   detail?: string;
-  /** pending | running | done | error */
-  status: "pending" | "running" | "done" | "error";
+  /**
+   * Status of this step.
+   *
+   * OPEN UNION: Standard values are `pending | running | done | error`
+   * (autocomplete works for these). But you can emit custom statuses
+   * from your backend (e.g. `awaiting_approval`, `awaiting_human_input`,
+   * `retrying`) — the SDK accepts any string and your UI can branch
+   * on the custom value.
+   */
+  status: "pending" | "running" | "done" | "error" | (string & {});
   /** Tool name (search, fetch_page, …). */
   tool?: string;
   /** Step index in the plan timeline. */

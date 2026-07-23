@@ -28,9 +28,12 @@ import {
   useChat,
   useFrontendTool,
   useAgentState,
+  AnvilShell,
+  useAnvilShell,
   type AnvilEvent,
   type AnyAnvilEvent,
   type ChatMessage,
+  type ThreadMeta,
 } from "@anvil/react-headless";
 import { Button } from "./components/ui/button";
 import { Card } from "./components/ui/card";
@@ -109,96 +112,53 @@ const SUGGESTIONS = [
   "Compare Next.js, Remix, and Astro for production",
 ];
 
-// ── Thread storage ───────────────────────────────────────────────
-
-interface ThreadMeta {
-  id: string;
-  title: string;
-  timestamp: number;
-}
-
-const threadMessagesKey = (id: string) => `anvil_thread_messages_${id}`;
-
-function loadThreadMessages(id: string | null): ChatMessage[] {
-  if (typeof window === "undefined" || !id) return [];
-  try {
-    const value = JSON.parse(localStorage.getItem(threadMessagesKey(id)) || "[]");
-    return Array.isArray(value) ? (value as ChatMessage[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveThreadMessages(id: string, messages: ChatMessage[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(threadMessagesKey(id), JSON.stringify(messages));
-}
-
-function deleteThreadMessages(id: string) {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(threadMessagesKey(id));
-}
-
-function loadThreads(): ThreadMeta[] {
-  if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(localStorage.getItem("anvil_threads") || "[]");
-  } catch {
-    return [];
-  }
-}
-
-function saveThread(id: string, title: string) {
-  if (typeof window === "undefined") return;
-  const threads = loadThreads().filter((t) => t.id !== id);
-  threads.unshift({ id, title: title.slice(0, 80), timestamp: Date.now() });
-  localStorage.setItem("anvil_threads", JSON.stringify(threads.slice(0, 50)));
-}
-
-function deleteThread(id: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(
-    "anvil_threads",
-    JSON.stringify(loadThreads().filter((t) => t.id !== id)),
-  );
-  deleteThreadMessages(id);
-}
-
-// ── URL routing ──────────────────────────────────────────────────
-
-function getThreadIdFromUrl(): string | null {
-  if (typeof window === "undefined") return null;
-  const m = window.location.hash.match(/^#\/thread\/(.+)$/);
-  return m ? decodeURIComponent(m[1]!) : null;
-}
-
-function navigateToThread(id: string) {
-  window.history.pushState(null, "", `/#/thread/${encodeURIComponent(id)}`);
-}
-
-function navigateToHome() {
-  window.history.pushState(null, "", "/");
-}
+// ── Thread storage (delegated to <AnvilShell>) ──────────────────────
+// Note: AnvilPerplexityInner reads threads from useAnvilShell() rather
+// than duplicating localStorage logic. Storage/routing backends are
+// pluggable via the `storage` / `routing` props on AnvilPerplexity.
 
 // ── Main component ───────────────────────────────────────────────
 
 export interface AnvilPerplexityProps {
   className?: string;
   defaultFocus?: FocusMode;
+  /**
+   * Override thread storage backend. Defaults to localStorage.
+   * Pass a custom `ShellStorage` to use a remote DB.
+   */
+  storage?: import("@anvil/react-headless").ShellStorage;
+  /**
+   * Override URL routing strategy. Defaults to hash routing.
+   * Pass a custom `ShellRouting` for pathname / query string / no-op.
+   */
+  routing?: import("@anvil/react-headless").ShellRouting;
 }
 
+/**
+ * Public AnvilPerplexity — wraps the inner implementation with
+ * <AnvilShell> for pluggable thread storage + routing and
+ * <AgentProvider> so descendants can share the agent via context.
+ */
 export function AnvilPerplexity({
+  className,
+  defaultFocus = "web",
+  storage,
+  routing,
+}: AnvilPerplexityProps) {
+  return (
+    <AnvilShell storage={storage} routing={routing}>
+      <AnvilPerplexityInner className={className} defaultFocus={defaultFocus} />
+    </AnvilShell>
+  );
+}
+
+function AnvilPerplexityInner({
   className,
   defaultFocus = "web",
 }: AnvilPerplexityProps) {
   // SHARED EVENT STREAM — single source of truth for the active thread.
   // Follow-up turns APPEND events; only newThread()/URL switch clears.
   const [sharedEvents, setSharedEvents] = useState<AnyAnvilEvent[]>([]);
-  const [threadId, setThreadId] = useState<string | null>(getThreadIdFromUrl);
-  // Hydrated messages from localStorage when reopening a thread
-  const [hydratedMessages, setHydratedMessages] = useState<ChatMessage[]>(() =>
-    loadThreadMessages(getThreadIdFromUrl()),
-  );
 
   // Session hook — tracks the *latest* session for this thread
   const session = useSession({
@@ -209,6 +169,19 @@ export function AnvilPerplexity({
 
   // Live messages from the event stream (multi-session if events were kept)
   const { messages: liveMessages } = useChat(session.sessionId, sharedEvents);
+
+  // Pull thread state from <AnvilShell> — handles persistence + routing.
+  const {
+    threadId,
+    hydratedMessages,
+    threads,
+    switchToThread,
+    startNewThread,
+    saveCurrentThread,
+    deleteThread: shellDeleteThread,
+  } = useAnvilShell();
+  const threadIdRef = useRef<string | null>(threadId);
+  threadIdRef.current = threadId;
 
   // Prefer live messages once the stream has content; else hydrated snapshot
   const messages =
@@ -221,39 +194,16 @@ export function AnvilPerplexity({
   const [focus, setFocus] = useState<FocusMode>(defaultFocus);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [threads, setThreads] = useState<ThreadMeta[]>(loadThreads);
-  const threadIdRef = useRef<string | null>(threadId);
-  threadIdRef.current = threadId;
 
-  // ── Thread routing sync ──────────────────────────────────────
+  // ── Thread switching: sharedEvents reset on shell-thread change ──
+  // (useAnvilShell owns thread state; we just clear the live stream when
+  // the user switches threads so we don't blend two threads' events.)
 
-  // When URL hash changes (back/forward, deep-link), switch thread context.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const urlThread = getThreadIdFromUrl();
-    if (urlThread !== threadId) {
-      setSharedEvents([]);
-      setThreadId(urlThread);
-      setHydratedMessages(loadThreadMessages(urlThread));
-      session.cancel();
-    }
+    setSharedEvents([]);
+    session.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeof window !== "undefined" ? window.location.hash : null]);
-
-  // Browser back/forward buttons
-  useEffect(() => {
-    const onPop = () => {
-      const tid = getThreadIdFromUrl();
-      if (tid !== threadIdRef.current) {
-        setSharedEvents([]);
-        setThreadId(tid);
-        setHydratedMessages(loadThreadMessages(tid));
-        session.cancel();
-      }
-    };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, [session]);
+  }, [threadId]);
 
   // ── Auto-focus input when idle ───────────────────────────────
 
@@ -269,13 +219,10 @@ export function AnvilPerplexity({
     if (session.status === "done" && threadId && messages.length > 0) {
       const firstMsg = messages.find((m) => m.role === "user");
       if (firstMsg) {
-        saveThread(threadId, firstMsg.content);
-        saveThreadMessages(threadId, messages);
-        setThreads(loadThreads());
-        setHydratedMessages(messages);
+        void saveCurrentThread(firstMsg.content, messages);
       }
     }
-  }, [session.status, threadId, messages]);
+  }, [session.status, threadId, messages, saveCurrentThread]);
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -290,15 +237,14 @@ export function AnvilPerplexity({
           ...(threadIdRef.current ? { threadId: threadIdRef.current } : {}),
           ...(focus ? { focus } : {}),
         });
-        const tid = result.threadId;
-        setThreadId(tid);
-        threadIdRef.current = tid;
-        navigateToThread(tid);
+        // Use shell to switch (loads from storage if exists, navigates URL).
+        void switchToThread(result.threadId);
+        threadIdRef.current = result.threadId;
       } catch (err) {
         console.error("Failed to start session:", err);
       }
     },
-    [session, focus],
+    [session, focus, switchToThread],
   );
 
   const stop = useCallback(() => {
@@ -306,14 +252,12 @@ export function AnvilPerplexity({
   }, [session]);
 
   const newThread = useCallback(() => {
-    navigateToHome();
-    setThreadId(null);
+    startNewThread();
     threadIdRef.current = null;
     setSharedEvents([]);
-    setHydratedMessages([]);
     session.cancel();
     inputRef.current?.focus();
-  }, [session]);
+  }, [startNewThread, session]);
 
   const isRunning = session.status === "running" || session.status === "starting";
   const showLanding =
@@ -352,7 +296,6 @@ export function AnvilPerplexity({
                   className="h-7 w-7 sm:h-8 sm:w-8"
                   onClick={() => {
                     setShowHistory(!showHistory);
-                    setThreads(loadThreads());
                   }}
                 >
                   <History className="h-3.5 sm:h-4 w-3.5 sm:w-4" />
@@ -399,11 +342,9 @@ export function AnvilPerplexity({
                       type="button"
                       className="flex-1 text-left text-xs py-1.5 px-2 rounded hover:bg-accent/30 truncate"
                       onClick={() => {
-                        navigateToThread(t.id);
+                        void switchToThread(t.id);
                         setSharedEvents([]);
-                        setThreadId(t.id);
                         threadIdRef.current = t.id;
-                        setHydratedMessages(loadThreadMessages(t.id));
                         session.cancel();
                         setShowHistory(false);
                       }}
@@ -417,8 +358,7 @@ export function AnvilPerplexity({
                       type="button"
                       className="opacity-0 group-hover:opacity-100 h-5 w-5 text-muted-foreground hover:text-destructive"
                       onClick={() => {
-                        deleteThread(t.id);
-                        setThreads(loadThreads());
+                        void shellDeleteThread(t.id);
                       }}
                     >
                       <Trash2 className="h-3 w-3" />
@@ -910,10 +850,38 @@ export {
   useChat,
   useFrontendTool,
   useAgentState,
+  // Pluggable shell (storage + routing)
+  AnvilShell,
+  useAnvilShell,
+  useAnvilShellOptional,
+  // Shared agent context
+  AgentProvider,
+  useAgentContext,
+  useAgentContextOptional,
   type AnvilEvent,
   type AnyAnvilEvent,
   type ChatMessage,
+  type ShellStorage,
+  type ShellRouting,
+  type ThreadMeta,
+  type ThreadData,
 } from "@anvil/react-headless";
+
+// Pure reducers + custom-reducer registry — escape hatch for domain
+// events and pre-built pure transforms. Imported directly from
+// @anvil/client (framework-agnostic) so consumers don't have to depend
+// on React-headless for the data layer.
+export {
+  reduceAgentState,
+  reduceAgentStateFromEvents,
+  reduceEventsToMessages,
+  agentStateFromTurns,
+  messagesFromTurns,
+  threadToEvents,
+  registerReducer,
+  listCustomReducers,
+} from "@anvil/client";
+export type { CustomEventHandler } from "@anvil/client";
 
 // AI Elements components
 export { Message, MessageContent, MessageAvatar } from "./components/ai-elements/message";
@@ -924,6 +892,14 @@ export { Reasoning, ReasoningTrigger, ReasoningContent } from "./components/ai-e
 export { Loader } from "./components/ai-elements/loader";
 export { Actions, Action } from "./components/ai-elements/actions";
 export { ErrorBanner } from "./components/ai-elements/error-banner";
+
+// InterruptDialog — human-in-the-loop UI for frontend tool calls
+export { InterruptDialog } from "./components/interrupt-dialog";
+export type {
+  InterruptLike,
+  InterruptDialogRendererProps,
+  InterruptDialogProps,
+} from "./components/interrupt-dialog";
 
 
 // Unified Agent hook

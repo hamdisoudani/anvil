@@ -18,6 +18,12 @@ import { jsx as _jsx } from "react/jsx-runtime";
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback, } from "react";
 import { AnvilClient, reduceAgentStateFromEvents as canonicalReduceAgentStateFromEvents, } from "@anvil/client";
+// Pure reducers (framework-agnostic, escape hatch for domain logic).
+// NOTE: reduceAgentState / reduceAgentStateFromEvents / reduceEventsToMessages
+// are also defined locally in this file (kept as the canonical React-side
+// version). The exports below add the custom-reducer registry + thread
+// hydration reducers that don't have local equivalents.
+export { agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, } from "@anvil/client";
 export { canonicalReduceAgentStateFromEvents };
 // ── Initial state ─────────────────────────────────────────────────
 const INITIAL_AGENT_STATE = {
@@ -716,4 +722,8 @@ export function useChat(sessionId, events) {
 }
 // ── Unified Agent Hook ──────────────────────────────────────────
 export { useAgent } from "./useAgent";
+// ── Shell (pluggable storage + routing) ────────────────────────────
+export { AnvilShell, useAnvilShell, useAnvilShellOptional, } from "./shell";
+// ── Agent context (share an agent across components) ────────────────
+export { AgentProvider, useAgentContext, useAgentContextOptional, } from "./agent-context";
 //# sourceMappingURL=index.js.map

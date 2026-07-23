@@ -19,7 +19,7 @@
  *   - `ThreadHistoryResponse`      — full thread state from server
  */
 export { AnvilClient } from "./client";
-export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, } from "./reducers";
+export { reduceAgentState, reduceAgentStateFromEvents, reduceEventsToMessages, agentStateFromTurns, messagesFromTurns, threadToEvents, registerReducer, listCustomReducers, __clearCustomReducers, } from "./reducers";
 export { INITIAL_AGENT_STATE } from "./types/agent-state";
 // Catch-all re-export of the schema module so consumers can import
 // any payload type / type guard / helper from "@anvil/client" directly.
