@@ -369,11 +369,15 @@ function ChatMessageRow({
               <span className="opacity-60">→</span>
               <span className="font-mono text-xs">{JSON.stringify(msg.toolInput).slice(0, 100)}</span>
             </div>
-            {msg.toolResult && (
-              <div className="text-xs text-green-600 dark:text-green-400 font-mono">
-                {"Result: " + (JSON.stringify(msg.toolResult as any)).slice(0, 200)}
-              </div>
-            )}
+            {(() => {
+              const tr = msg.toolResult as any;
+              if (!tr) return null;
+              return (
+                <div className="text-xs text-green-600 dark:text-green-400 font-mono">
+                  {String("Result: " + String(JSON.stringify(tr)).slice(0, 200))}
+                </div>
+              );
+            })()}
             {msg.toolError && (
               <div className="text-xs text-red-600 dark:text-red-400 font-mono">
                 Error: {String(msg.toolError).slice(0, 200)}
