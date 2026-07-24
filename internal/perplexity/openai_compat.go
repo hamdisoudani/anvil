@@ -111,11 +111,12 @@ func (r *OpenAICompatibleRouter) Name() string {
 // maximum compatibility — Groq, Together, vLLM, and others
 // don't support the non-standard 'system' field.
 type openAIRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens,omitempty"`
-	Stream    bool            `json:"stream"`
-	Messages  []openAIMessage `json:"messages"`
-	Tools     []openAITool    `json:"tools,omitempty"`
+	Model      string          `json:"model"`
+	MaxTokens  int             `json:"max_tokens,omitempty"`
+	Stream     bool            `json:"stream"`
+	Messages   []openAIMessage `json:"messages"`
+	Tools      []openAITool    `json:"tools,omitempty"`
+	ToolChoice string          `json:"tool_choice,omitempty"`
 }
 
 type openAIMessage struct {
@@ -158,6 +159,10 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 		ot.Function.Description = t.Description
 		ot.Function.Parameters = t.InputSchema
 		body.Tools = append(body.Tools, ot)
+	}
+	// If we have tools, tell the model it may call them.
+	if len(body.Tools) > 0 {
+		body.ToolChoice = "auto"
 	}
 
 	jsonBody, _ := json.Marshal(body)
