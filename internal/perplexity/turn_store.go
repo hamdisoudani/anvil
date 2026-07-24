@@ -90,7 +90,6 @@ func (s *TurnStore) Record(e wire.Event) {
 	if !ok {
 		// New session. Initialize accumulator from session.start.
 		if e.Type != wire.EventSessionStart {
-			fmt.Fprintf(os.Stderr, "[TurnStore] skip non-start event type=%s session=%s\n", e.Type, e.SessionID)
 			// Skip — we only start recording from session.start.
 			return
 		}
@@ -98,25 +97,27 @@ func (s *TurnStore) Record(e wire.Event) {
 			sessionID: e.SessionID,
 			startedAt:  e.CreatedAt,
 		}
-		// The bus forwards events with map[string]interface{} payloads
-		// (the handler publishes via map, not typed structs), so we
-		// accept both shapes here. ThreadID also accepts "thread_id"
-		// (snake) since the handler emits snake_case historically.
-		fmt.Fprintf(os.Stderr, "[TurnStore] init session=%s type=%T\n", e.SessionID, e.Payload)
+		// Prefer wire.Event.ThreadID (always populated by the bus).
+		// Fall back to payload fields for safety.
+		acc.threadID = e.ThreadID
 		if p, ok := e.Payload.(wire.SessionStartPayload); ok {
-			acc.threadID = p.ThreadID
+			if acc.threadID == "" {
+				acc.threadID = p.ThreadID
+			}
 			acc.question = p.Task
 		} else if m, ok := e.Payload.(map[string]interface{}); ok {
-			if tid, ok := m["threadId"].(string); ok {
-				acc.threadID = tid
-			} else if tid, ok := m["thread_id"].(string); ok {
-				acc.threadID = tid
+			if acc.threadID == "" {
+				if tid, ok := m["threadId"].(string); ok {
+					acc.threadID = tid
+				} else if tid, ok := m["thread_id"].(string); ok {
+					acc.threadID = tid
+				}
 			}
 			if q, ok := m["task"].(string); ok {
 				acc.question = q
 			}
 		}
-		fmt.Fprintf(os.Stderr, "[TurnStore] init done: thread=%s q=%s\n", acc.threadID, acc.question)
+		fmt.Fprintf(os.Stderr, "[TurnStore] init session=%s thread=%s q=%s\n", e.SessionID, acc.threadID, acc.question)
 		s.pending[e.SessionID] = acc
 	}
 
