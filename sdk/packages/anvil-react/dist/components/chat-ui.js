@@ -110,14 +110,40 @@ function ChatMessageRow({ msg, isLast, isProcessing, agent, showThinking, copied
         return (_jsxs(Message, { from: "user", children: [_jsx(MessageAvatar, { name: "You" }), _jsx(MessageContent, { children: msg.content })] }));
     }
     if (msg.role === "tool") {
-        // Render tool calls with input and result
-        const isFrontend = msg.toolName && msg.toolName === "change_background_color";
-        return (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: "Tool" }), _jsx(MessageContent, { variant: "flat", children: _jsxs("div", { className: "space-y-2 text-sm", children: [_jsxs("div", { className: "flex items-center gap-2 text-xs text-muted-foreground", children: [_jsx("span", { className: "font-mono px-2 py-0.5 rounded bg-muted", children: msg.toolName || "tool" }), _jsx("span", { className: "opacity-60", children: "\u2192" }), _jsx("span", { className: "font-mono text-xs", children: JSON.stringify(msg.toolInput).slice(0, 100) })] }), (() => {
-                                const tr = msg.toolResult;
-                                if (!tr)
-                                    return null;
-                                return (_jsx("div", { className: "text-xs text-green-600 dark:text-green-400 font-mono", children: String("Result: " + String(JSON.stringify(tr)).slice(0, 200)) }));
-                            })(), msg.toolError && (_jsxs("div", { className: "text-xs text-red-600 dark:text-red-400 font-mono", children: ["Error: ", String(msg.toolError).slice(0, 200)] }))] }) })] }));
+        // Stage defaults: if no stage set (e.g. hydrated history), infer from
+        // presence of outcome/result/error.
+        const stage = msg.toolStage ??
+            (msg.toolOutcome || msg.toolResult !== undefined || msg.toolError
+                ? "completed"
+                : "pending");
+        const outcome = msg.toolOutcome ??
+            (msg.toolError
+                ? { success: false, error: msg.toolError }
+                : msg.toolResult !== undefined
+                    ? { success: true, result: msg.toolResult }
+                    : undefined);
+        // If the developer registered a renderer for this tool, use it.
+        // Renderers receive the full lifecycle context so they can branch
+        // on stage/outcome to show spinners, success UI, or errors.
+        const renderer = agent.renderTool && msg.toolName && agent.renderTool[msg.toolName];
+        if (renderer) {
+            const ctx = {
+                input: msg.toolInput,
+                result: outcome?.success ? outcome.result : undefined,
+                error: outcome && !outcome.success ? outcome.error : undefined,
+                stage,
+                outcome,
+                isFrontend: !!msg.toolIsFrontend,
+            };
+            return (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: msg.toolIsFrontend ? "T" : "S" }), _jsx(MessageContent, { variant: "flat", children: renderer(ctx) })] }));
+        }
+        // Default rendering — show lifecycle stage + result with full info.
+        return (_jsxs(Message, { from: "assistant", children: [_jsx(MessageAvatar, { name: msg.toolIsFrontend ? "T" : "S" }), _jsx(MessageContent, { variant: "flat", children: _jsxs("div", { className: "space-y-2 text-sm", children: [_jsxs("div", { className: "flex items-center gap-2 text-xs text-muted-foreground", children: [_jsx("span", { className: "font-mono px-2 py-0.5 rounded bg-muted", children: msg.toolName || "tool" }), _jsx("span", { className: "opacity-60", children: "\u2192" }), _jsx("span", { className: "font-mono text-xs", children: JSON.stringify(msg.toolInput).slice(0, 100) }), _jsxs("span", { className: cn("ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide", stage === "pending" && "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300", stage === "executing" && "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300", stage === "completed" &&
+                                            outcome?.success &&
+                                            "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300", stage === "completed" &&
+                                            outcome &&
+                                            !outcome.success &&
+                                            "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300"), children: [stage === "pending" && (_jsx(Loader, { size: 10 })), stage === "executing" && (_jsx(Loader, { size: 10 })), stage] })] }), outcome?.success && (_jsx("div", { className: "text-xs text-green-600 dark:text-green-400 font-mono", children: String("Result: " + String(JSON.stringify(outcome.result)).slice(0, 200)) })), outcome && !outcome.success && (_jsxs("div", { className: "text-xs text-red-600 dark:text-red-400 font-mono", children: ["Error: ", String(outcome.error).slice(0, 200)] }))] }) })] }));
     }
     const sources = msg.sources;
     const streaming = isLast && isProcessing;

@@ -41,11 +41,14 @@ import {
   useSession,
   useChat,
   useAgentState,
+  useAnvil,
   type AnvilEvent,
   type AnyAnvilEvent,
   type ChatMessage,
   type UseSessionResult,
   type AgentState,
+  type ToolStage,
+  type ToolOutcome,
 } from ".";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -60,8 +63,53 @@ export interface ToolDefinition<I = any, O = any> {
   execute: ToolHandler<I, O>;
 }
 
-/** Tool renderer: renders a tool result as a React node */
-export type ToolRenderer = (data: any) => ReactNode;
+/**
+ * Strongly-typed tool renderer. Receives the full lifecycle context
+ * (stage, outcome, input) so the UI can render any stage — pending
+ * spinners, executing progress, success result, or error.
+ *
+ * Used for BOTH frontend tools (browser-side) AND server tools
+ * (the agent called them, here's the result). The renderer fires
+ * for both so the developer gets a unified API.
+ *
+ * @example
+ *   renderTool: {
+ *     get_weather: ({ input, result, stage, outcome }) => {
+ *       if (stage === "pending") return <Spinner />;
+ *       if (outcome?.success === false) return <Error err={outcome.error} />;
+ *       return <WeatherCard city={input.city} data={result} />;
+ *     }
+ *   }
+ */
+export type ToolRendererContext<I = any, O = any> = {
+  /** The raw input the agent passed to the tool. */
+  input: I;
+  /** The tool result (only set when stage === "completed" && outcome.success). */
+  result?: O;
+  /** The error message (only set when stage === "completed" && !outcome.success). */
+  error?: string;
+  /** The current lifecycle stage. */
+  stage: ToolStage;
+  /** The discriminated outcome (only set when stage === "completed"). */
+  outcome?: ToolOutcome;
+  /** True for browser-side tools. */
+  isFrontend: boolean;
+};
+
+export type ToolRenderer<I = any, O = any> = (
+  ctx: ToolRendererContext<I, O>,
+) => ReactNode;
+
+/**
+ * Map of tool-name → custom UI renderer. Used by `ChatUI` to render
+ * tool calls (frontend OR server tools) with the developer's React
+ * component instead of the default JSON dump.
+ *
+ * If a tool is in this map, its renderer runs at every stage so you
+ * can show pending spinners, executing progress, success UI, or error UI.
+ * If a tool is NOT in this map, the default rendering is used.
+ */
+export type RenderToolMap = Record<string, ToolRenderer>;
 
 /** An active interrupt from the agent, waiting for user input. */
 export interface PendingInterrupt {
@@ -87,10 +135,16 @@ export interface UseAgentOptions {
   url?: string;
   /** Session ID to resume (for thread reload) */
   sessionId?: string;
+  /** Thread ID to resume (loads history from backend automatically). */
+  threadId?: string;
   /** Tool handlers: name → handler function */
   tools?: Record<string, ToolHandler | ToolDefinition>;
-  /** Generative UI renderers: tool name → React component */
-  renderTool?: Record<string, ToolRenderer>;
+  /**
+   * Generative UI renderers for tools (both frontend + server tools).
+   * Each renderer receives `{input, result, error, stage, outcome, isFrontend}`
+   * so it can render pending spinners, success UI, errors, etc.
+   */
+  renderTool?: RenderToolMap;
   /** Called when the agent's status changes */
   onStatusChange?: (status: string) => void;
   /** Called for each event received */
@@ -143,6 +197,9 @@ export interface UseAgentReturn {
   // ── Events (raw stream, for custom UIs) ──
   events: AnvilEvent[];
 
+  // ── Custom tool renderers (renderTool map passed to useAgent) ──
+  renderTool?: RenderToolMap;
+
   // ── Session (low-level access, for advanced use) ──
   session: UseSessionResult;
 }
@@ -152,7 +209,9 @@ export interface UseAgentReturn {
 export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   const {
     sessionId: initialSessionId,
+    threadId: initialThreadId,
     tools: toolHandlers = {},
+    renderTool,
     onStatusChange,
     onEvent: onEventCb,
     onInterrupt,
@@ -160,6 +219,55 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
 
   // Shared event stream (single source of truth)
   const [sharedEvents, setSharedEvents] = useState<AnvilEvent[]>([]);
+
+  // Hydrate chat history from the backend when a threadId is given.
+  // The server returns the persisted Message[] for the thread, which we
+  // prepend to sharedEvents so the chat renders all prior turns immediately.
+  const [hydratedHistory, setHydratedHistory] = useState<ChatMessage[]>([]);
+  const { client: anvilClient } = useAnvil();
+
+  useEffect(() => {
+    if (!initialThreadId) {
+      setHydratedHistory([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await anvilClient.getThread(initialThreadId);
+        if (!cancelled && resp?.turns) {
+          // Convert each TurnRecord to ChatMessage[] (user + assistant).
+          // Each turn produces: { user } + { assistant } messages.
+          const msgs: ChatMessage[] = [];
+          for (const turn of resp.turns) {
+            msgs.push({
+              id: `hist-user-${turn.id}`,
+              role: "user",
+              content: turn.question,
+              timestamp: turn.startedAt ? Date.parse(turn.startedAt) : Date.now(),
+            });
+            if (turn.answer) {
+              msgs.push({
+                id: `hist-assistant-${turn.id}`,
+                role: "assistant",
+                content: turn.answer,
+                timestamp: turn.endedAt ? Date.parse(turn.endedAt) : Date.now(),
+                sources: turn.sources,
+                related: turn.related,
+              });
+            }
+          }
+          setHydratedHistory(msgs);
+        }
+      } catch {
+        // Backend doesn't expose getThread yet — start with empty history.
+        // Chat will still work; just without hydration.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialThreadId, anvilClient]);
 
   // Pending interrupt state
   const [pendingInterrupt, setPendingInterrupt] = useState<PendingInterrupt | null>(null);
@@ -252,8 +360,13 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
     sessionRef.current = session;
   });
 
-  // Chat messages + Agent state
-  const { messages } = useChat(session.sessionId, sharedEvents);
+  // Chat messages + Agent state.
+  // Hydrated history is prepended so prior turns are visible immediately.
+  const { messages: liveMessages } = useChat(session.sessionId, sharedEvents);
+  const messages = useMemo<ChatMessage[]>(
+    () => (hydratedHistory.length > 0 ? [...hydratedHistory, ...liveMessages] : liveMessages),
+    [hydratedHistory, liveMessages],
+  );
   const agentState = useAgentState({ sharedEvents });
 
   // Derived state
@@ -276,8 +389,8 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
   }, [session.start, session.cancel]);
 
   // Track the active thread ID in state so consumers re-render when it changes.
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const threadIdRef = useRef<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(initialThreadId ?? null);
+  const threadIdRef = useRef<string | null>(initialThreadId ?? null);
 
   // Send: start a new run or continue. When `opts.threadId` is given
   // (or the previous run produced one), events from this session are
@@ -362,6 +475,7 @@ export function useAgent(options: UseAgentOptions = {}): UseAgentReturn {
     approveInterrupt,
     rejectInterrupt,
     events: sharedEvents,
+    renderTool,
     session,
   };
 }

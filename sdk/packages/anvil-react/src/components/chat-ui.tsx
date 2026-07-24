@@ -12,7 +12,14 @@
  */
 import * as React from "react";
 import { cn } from "../lib/utils";
-import type { UseAgentReturn, ChatMessage } from "@anvil/react-headless";
+import type {
+  UseAgentReturn,
+  ChatMessage,
+  ToolStage,
+  ToolOutcome,
+  ToolRendererContext,
+  RenderToolMap,
+} from "@anvil/react-headless";
 import {
   Message,
   MessageContent,
@@ -355,11 +362,49 @@ function ChatMessageRow({
     );
   }
   if (msg.role === "tool") {
-    // Render tool calls with input and result
-    const isFrontend = msg.toolName && msg.toolName === "change_background_color";
+    // Stage defaults: if no stage set (e.g. hydrated history), infer from
+    // presence of outcome/result/error.
+    const stage: ToolStage =
+      msg.toolStage ??
+      (msg.toolOutcome || msg.toolResult !== undefined || msg.toolError
+        ? "completed"
+        : "pending");
+    const outcome: ToolOutcome | undefined =
+      msg.toolOutcome ??
+      (msg.toolError
+        ? { success: false, error: msg.toolError }
+        : msg.toolResult !== undefined
+        ? { success: true, result: msg.toolResult }
+        : undefined);
+
+    // If the developer registered a renderer for this tool, use it.
+    // Renderers receive the full lifecycle context so they can branch
+    // on stage/outcome to show spinners, success UI, or errors.
+    const renderer =
+      agent.renderTool && msg.toolName && agent.renderTool[msg.toolName];
+    if (renderer) {
+      const ctx: ToolRendererContext = {
+        input: msg.toolInput,
+        result: outcome?.success ? outcome.result : undefined,
+        error: outcome && !outcome.success ? outcome.error : undefined,
+        stage,
+        outcome,
+        isFrontend: !!msg.toolIsFrontend,
+      };
+      return (
+        <Message from="assistant">
+          <MessageAvatar name={msg.toolIsFrontend ? "T" : "S"} />
+          <MessageContent variant="flat">
+            {renderer(ctx)}
+          </MessageContent>
+        </Message>
+      );
+    }
+
+    // Default rendering — show lifecycle stage + result with full info.
     return (
       <Message from="assistant">
-        <MessageAvatar name="Tool" />
+        <MessageAvatar name={msg.toolIsFrontend ? "T" : "S"} />
         <MessageContent variant="flat">
           <div className="space-y-2 text-sm">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -367,20 +412,42 @@ function ChatMessageRow({
                 {msg.toolName || "tool"}
               </span>
               <span className="opacity-60">→</span>
-              <span className="font-mono text-xs">{JSON.stringify(msg.toolInput).slice(0, 100)}</span>
+              <span className="font-mono text-xs">
+                {JSON.stringify(msg.toolInput).slice(0, 100)}
+              </span>
+              <span
+                className={cn(
+                  "ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                  stage === "pending" && "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+                  stage === "executing" && "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+                  stage === "completed" &&
+                    outcome?.success &&
+                    "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+                  stage === "completed" &&
+                    outcome &&
+                    !outcome.success &&
+                    "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+                )}
+              >
+                {stage === "pending" && (
+                  <Loader size={10} />
+                )}
+                {stage === "executing" && (
+                  <Loader size={10} />
+                )}
+                {stage}
+              </span>
             </div>
-            {(() => {
-              const tr = msg.toolResult as any;
-              if (!tr) return null;
-              return (
-                <div className="text-xs text-green-600 dark:text-green-400 font-mono">
-                  {String("Result: " + String(JSON.stringify(tr)).slice(0, 200))}
-                </div>
-              );
-            })()}
-            {msg.toolError && (
+            {outcome?.success && (
+              <div className="text-xs text-green-600 dark:text-green-400 font-mono">
+                {String(
+                  "Result: " + String(JSON.stringify(outcome.result)).slice(0, 200),
+                )}
+              </div>
+            )}
+            {outcome && !outcome.success && (
               <div className="text-xs text-red-600 dark:text-red-400 font-mono">
-                Error: {String(msg.toolError).slice(0, 200)}
+                Error: {String(outcome.error).slice(0, 200)}
               </div>
             )}
           </div>

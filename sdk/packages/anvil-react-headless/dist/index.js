@@ -613,17 +613,31 @@ export function useChat(sessionId, events) {
                         content: p.name,
                         toolName: p.name,
                         toolInput: p.input,
+                        toolStage: "pending",
+                        toolIsFrontend: !!p.is_frontend,
                         timestamp: Date.parse(e.createdAt),
                     });
                     break;
                 }
                 case "tool.result": {
                     const p = e.payload;
-                    // Attach to last tool call
+                    // Attach to last matching tool call (by id when available, else by name+pending)
                     for (let i = out.length - 1; i >= 0; i--) {
                         const m = out[i];
-                        if (m && m.role === "tool" && m.toolName && !m.toolResult && !m.toolError) {
-                            out[i] = { ...m, toolResult: p.result, toolError: p.err };
+                        if (m &&
+                            m.role === "tool" &&
+                            m.toolName === p.name &&
+                            m.toolStage !== "completed") {
+                            const hasError = !!(p.err || p.error);
+                            out[i] = {
+                                ...m,
+                                toolResult: p.result,
+                                toolError: hasError ? (p.err || p.error) : undefined,
+                                toolStage: "completed",
+                                toolOutcome: hasError
+                                    ? { success: false, error: p.err || p.error }
+                                    : { success: true, result: p.result },
+                            };
                             break;
                         }
                     }

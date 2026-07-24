@@ -23,6 +23,12 @@ function ChatSurface() {
   // server with each POST /tasks request so the LLM knows what's
   // available. The execute() functions stay in the browser and are
   // called when the server emits a tool.call event.
+  //
+  // renderTool provides strongly-typed custom UI for each tool. The
+  // renderer receives `{input, result, error, stage, outcome, isFrontend}`
+  // so it can branch on lifecycle to show pending spinners, success
+  // cards, or error UI. Works for BOTH frontend tools (browser-side)
+  // AND server tools (the agent called them).
   const agent = useAgent({
     tools: {
       get_current_time: {
@@ -81,6 +87,79 @@ function ChatSurface() {
             `main.bg-background, .bg-background { background-color: ${color} !important; }`;
           return { applied: color, previous: previous || null };
         },
+      },
+    },
+    /**
+     * Custom UI for tool calls. The renderer fires at EVERY lifecycle
+     * stage (pending → executing → completed-success/error) so you can
+     * build rich, animated tool cards.
+     *
+     * NOTE: This also works for server-side tools (e.g. a `web_search`
+     * tool that the agent runs on the backend) — the same renderer API
+     * applies to both, since useChat auto-populates stage/outcome for
+     * ANY tool.call / tool.result event.
+     */
+    renderTool: {
+      change_background_color: ({ input, result, error, stage, outcome }) => {
+        if (stage === "pending") {
+          return (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 px-3 py-2 text-xs">
+              <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+              <span className="font-medium">Preparing background change…</span>
+              <code className="ml-auto font-mono text-[10px] text-muted-foreground">
+                {String(input?.color ?? "")}
+              </code>
+            </div>
+          );
+        }
+        if (outcome && !outcome.success) {
+          return (
+            <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 px-3 py-2 text-xs text-red-700 dark:text-red-300">
+              <div className="font-medium">Failed to change background</div>
+              <div className="opacity-80 mt-0.5 font-mono">{error}</div>
+            </div>
+          );
+        }
+        const applied = (result as any)?.applied ?? input?.color;
+        return (
+          <div
+            className="flex items-center gap-3 rounded-lg border px-3 py-2 text-xs"
+            style={{
+              borderColor: applied,
+              background: `color-mix(in srgb, ${applied} 12%, transparent)`,
+            }}
+          >
+            <div
+              className="h-6 w-6 rounded border"
+              style={{ background: applied }}
+            />
+            <div>
+              <div className="font-medium">Background changed</div>
+              <div className="opacity-70 font-mono text-[10px]">
+                {applied}
+              </div>
+            </div>
+          </div>
+        );
+      },
+      get_current_time: ({ result, stage, outcome }) => {
+        if (stage === "pending") {
+          return (
+            <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30 px-3 py-2 text-xs">
+              <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+              <span>Fetching time…</span>
+            </div>
+          );
+        }
+        if (outcome?.success) {
+          return (
+            <div className="rounded-lg border bg-card px-3 py-2 text-xs">
+              <div className="text-muted-foreground">Current time</div>
+              <div className="font-mono mt-0.5">{String(result)}</div>
+            </div>
+          );
+        }
+        return null;
       },
     },
   });

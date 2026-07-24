@@ -823,14 +823,50 @@ export function useFrontendTool<TInput = unknown, TOutput = unknown>(
 
 // ── useChat: high-level chat-style event reducer ─────────────────
 
+/**
+ * Tool lifecycle stages. A tool call flows through these in order:
+ *   pending   → executing → completed (with success or error)
+ *
+ * The stage is auto-populated by `useChat` based on the events it sees
+ * (`tool.call` → `tool.result` or `tool.error`). Custom renderers can
+ * branch on this to show spinners, success states, or error UI.
+ */
+export type ToolStage =
+  | "pending"     // Agent decided to call the tool, awaiting execution
+  | "executing"   // Browser-side execute() handler is running
+  | "completed"   // Tool finished — check `toolError` for success vs error
+  ;
+
+/** Discriminated result: success=true means `toolResult` is set, else `toolError`. */
+export type ToolOutcome =
+  | { success: true; result: unknown }
+  | { success: false; error: string };
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "tool";
   content: string;
   toolName?: string;
+  /** Input that was passed to the tool. */
   toolInput?: unknown;
+  /** Output of the tool (set on successful completion). */
   toolResult?: unknown;
+  /** Error message (set on failed completion). */
   toolError?: string;
+  /**
+   * Lifecycle stage of the tool call. Auto-derived by `useChat`:
+   *   - `pending`     on `tool.call` event
+   *   - `executing`   while the browser handler is running
+   *   - `completed`   once `tool.result` or `tool.error` arrives
+   */
+  toolStage?: ToolStage;
+  /**
+   * Discriminated union of the tool outcome (set when stage=completed).
+   * Custom renderers can switch on `outcome.success` to render success vs error UI.
+   */
+  toolOutcome?: ToolOutcome;
+  /** True for browser-side (frontend) tools vs server-side tools. */
+  toolIsFrontend?: boolean;
   timestamp: number;
   isStreaming?: boolean;
   subAgentId?: string;
@@ -916,17 +952,33 @@ export function useChat(sessionId: string | null, events?: AnyAnvilEvent[]) {
             content: p.name,
             toolName: p.name,
             toolInput: p.input,
+            toolStage: "pending",
+            toolIsFrontend: !!p.is_frontend,
             timestamp: Date.parse(e.createdAt),
           });
           break;
         }
         case "tool.result": {
           const p = e.payload as any;
-          // Attach to last tool call
+          // Attach to last matching tool call (by id when available, else by name+pending)
           for (let i = out.length - 1; i >= 0; i--) {
             const m = out[i];
-            if (m && m.role === "tool" && m.toolName && !m.toolResult && !m.toolError) {
-              out[i] = { ...m, toolResult: p.result, toolError: p.err };
+            if (
+              m &&
+              m.role === "tool" &&
+              m.toolName === p.name &&
+              m.toolStage !== "completed"
+            ) {
+              const hasError = !!(p.err || p.error);
+              out[i] = {
+                ...m,
+                toolResult: p.result,
+                toolError: hasError ? (p.err || p.error) : undefined,
+                toolStage: "completed",
+                toolOutcome: hasError
+                  ? { success: false, error: p.err || p.error }
+                  : { success: true, result: p.result },
+              };
               break;
             }
           }
@@ -1061,7 +1113,16 @@ export function useChat(sessionId: string | null, events?: AnyAnvilEvent[]) {
 
 // ── Unified Agent Hook ──────────────────────────────────────────
 export { useAgent } from "./useAgent";
-export type { ToolHandler, ToolDefinition, ToolRenderer, UseAgentOptions, UseAgentReturn, PendingInterrupt } from "./useAgent";
+export type {
+  ToolHandler,
+  ToolDefinition,
+  ToolRenderer,
+  ToolRendererContext,
+  RenderToolMap,
+  UseAgentOptions,
+  UseAgentReturn,
+  PendingInterrupt,
+} from "./useAgent";
 
 // ── Shell (pluggable storage + routing) ────────────────────────────
 export {

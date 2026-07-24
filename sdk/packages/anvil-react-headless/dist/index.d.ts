@@ -201,14 +201,48 @@ export declare function useAnvilEvent<T extends EventType>(sessionId: string | n
     type: T;
 }>) => void): void;
 export declare function useFrontendTool<TInput = unknown, TOutput = unknown>(tool: FrontendToolExecutor<TInput, TOutput>): void;
+/**
+ * Tool lifecycle stages. A tool call flows through these in order:
+ *   pending   → executing → completed (with success or error)
+ *
+ * The stage is auto-populated by `useChat` based on the events it sees
+ * (`tool.call` → `tool.result` or `tool.error`). Custom renderers can
+ * branch on this to show spinners, success states, or error UI.
+ */
+export type ToolStage = "pending" | "executing" | "completed";
+/** Discriminated result: success=true means `toolResult` is set, else `toolError`. */
+export type ToolOutcome = {
+    success: true;
+    result: unknown;
+} | {
+    success: false;
+    error: string;
+};
 export interface ChatMessage {
     id: string;
     role: "user" | "assistant" | "tool";
     content: string;
     toolName?: string;
+    /** Input that was passed to the tool. */
     toolInput?: unknown;
+    /** Output of the tool (set on successful completion). */
     toolResult?: unknown;
+    /** Error message (set on failed completion). */
     toolError?: string;
+    /**
+     * Lifecycle stage of the tool call. Auto-derived by `useChat`:
+     *   - `pending`     on `tool.call` event
+     *   - `executing`   while the browser handler is running
+     *   - `completed`   once `tool.result` or `tool.error` arrives
+     */
+    toolStage?: ToolStage;
+    /**
+     * Discriminated union of the tool outcome (set when stage=completed).
+     * Custom renderers can switch on `outcome.success` to render success vs error UI.
+     */
+    toolOutcome?: ToolOutcome;
+    /** True for browser-side (frontend) tools vs server-side tools. */
+    toolIsFrontend?: boolean;
     timestamp: number;
     isStreaming?: boolean;
     subAgentId?: string;
@@ -227,7 +261,7 @@ export declare function useChat(sessionId: string | null, events?: AnyAnvilEvent
     messages: ChatMessage[];
 };
 export { useAgent } from "./useAgent";
-export type { ToolHandler, ToolDefinition, ToolRenderer, UseAgentOptions, UseAgentReturn, PendingInterrupt } from "./useAgent";
+export type { ToolHandler, ToolDefinition, ToolRenderer, ToolRendererContext, RenderToolMap, UseAgentOptions, UseAgentReturn, PendingInterrupt, } from "./useAgent";
 export { AnvilShell, useAnvilShell, useAnvilShellOptional, } from "./shell";
 export type { ShellStorage, ShellRouting, ThreadMeta, ThreadData, AnvilShellContextValue, AnvilShellProps, } from "./shell";
 export { AgentProvider, useAgentContext, useAgentContextOptional, } from "./agent-context";

@@ -35,7 +35,7 @@
  * Anvil is the only framework where HITL is just a tool call.
  */
 import { type ReactNode } from "react";
-import { type AnvilEvent, type ChatMessage, type UseSessionResult, type AgentState } from ".";
+import { type AnvilEvent, type ChatMessage, type UseSessionResult, type AgentState, type ToolStage, type ToolOutcome } from ".";
 /** Tool handler: a function the developer provides to execute a tool */
 export type ToolHandler<I = any, O = any> = (input: I) => Promise<O>;
 /** A registered tool with its handler */
@@ -44,8 +44,49 @@ export interface ToolDefinition<I = any, O = any> {
     inputSchema?: Record<string, any>;
     execute: ToolHandler<I, O>;
 }
-/** Tool renderer: renders a tool result as a React node */
-export type ToolRenderer = (data: any) => ReactNode;
+/**
+ * Strongly-typed tool renderer. Receives the full lifecycle context
+ * (stage, outcome, input) so the UI can render any stage — pending
+ * spinners, executing progress, success result, or error.
+ *
+ * Used for BOTH frontend tools (browser-side) AND server tools
+ * (the agent called them, here's the result). The renderer fires
+ * for both so the developer gets a unified API.
+ *
+ * @example
+ *   renderTool: {
+ *     get_weather: ({ input, result, stage, outcome }) => {
+ *       if (stage === "pending") return <Spinner />;
+ *       if (outcome?.success === false) return <Error err={outcome.error} />;
+ *       return <WeatherCard city={input.city} data={result} />;
+ *     }
+ *   }
+ */
+export type ToolRendererContext<I = any, O = any> = {
+    /** The raw input the agent passed to the tool. */
+    input: I;
+    /** The tool result (only set when stage === "completed" && outcome.success). */
+    result?: O;
+    /** The error message (only set when stage === "completed" && !outcome.success). */
+    error?: string;
+    /** The current lifecycle stage. */
+    stage: ToolStage;
+    /** The discriminated outcome (only set when stage === "completed"). */
+    outcome?: ToolOutcome;
+    /** True for browser-side tools. */
+    isFrontend: boolean;
+};
+export type ToolRenderer<I = any, O = any> = (ctx: ToolRendererContext<I, O>) => ReactNode;
+/**
+ * Map of tool-name → custom UI renderer. Used by `ChatUI` to render
+ * tool calls (frontend OR server tools) with the developer's React
+ * component instead of the default JSON dump.
+ *
+ * If a tool is in this map, its renderer runs at every stage so you
+ * can show pending spinners, executing progress, success UI, or error UI.
+ * If a tool is NOT in this map, the default rendering is used.
+ */
+export type RenderToolMap = Record<string, ToolRenderer>;
 /** An active interrupt from the agent, waiting for user input. */
 export interface PendingInterrupt {
     /** The call ID (used to send the result back). */
@@ -69,10 +110,16 @@ export interface UseAgentOptions {
     url?: string;
     /** Session ID to resume (for thread reload) */
     sessionId?: string;
+    /** Thread ID to resume (loads history from backend automatically). */
+    threadId?: string;
     /** Tool handlers: name → handler function */
     tools?: Record<string, ToolHandler | ToolDefinition>;
-    /** Generative UI renderers: tool name → React component */
-    renderTool?: Record<string, ToolRenderer>;
+    /**
+     * Generative UI renderers for tools (both frontend + server tools).
+     * Each renderer receives `{input, result, error, stage, outcome, isFrontend}`
+     * so it can render pending spinners, success UI, errors, etc.
+     */
+    renderTool?: RenderToolMap;
     /** Called when the agent's status changes */
     onStatusChange?: (status: string) => void;
     /** Called for each event received */
@@ -116,6 +163,7 @@ export interface UseAgentReturn {
     /** Reject the current interrupt. Agent gets an error. */
     rejectInterrupt: (reason?: string) => void;
     events: AnvilEvent[];
+    renderTool?: RenderToolMap;
     session: UseSessionResult;
 }
 export declare function useAgent(options?: UseAgentOptions): UseAgentReturn;

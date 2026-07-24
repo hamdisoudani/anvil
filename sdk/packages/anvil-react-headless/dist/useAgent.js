@@ -36,12 +36,60 @@
  * Anvil is the only framework where HITL is just a tool call.
  */
 import { useMemo, useCallback, useState, useRef, useEffect, startTransition } from "react";
-import { useSession, useChat, useAgentState, } from ".";
+import { useSession, useChat, useAgentState, useAnvil, } from ".";
 // ── Hook ─────────────────────────────────────────────────────────
 export function useAgent(options = {}) {
-    const { sessionId: initialSessionId, tools: toolHandlers = {}, onStatusChange, onEvent: onEventCb, onInterrupt, } = options;
+    const { sessionId: initialSessionId, threadId: initialThreadId, tools: toolHandlers = {}, renderTool, onStatusChange, onEvent: onEventCb, onInterrupt, } = options;
     // Shared event stream (single source of truth)
     const [sharedEvents, setSharedEvents] = useState([]);
+    // Hydrate chat history from the backend when a threadId is given.
+    // The server returns the persisted Message[] for the thread, which we
+    // prepend to sharedEvents so the chat renders all prior turns immediately.
+    const [hydratedHistory, setHydratedHistory] = useState([]);
+    const { client: anvilClient } = useAnvil();
+    useEffect(() => {
+        if (!initialThreadId) {
+            setHydratedHistory([]);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const resp = await anvilClient.getThread(initialThreadId);
+                if (!cancelled && resp?.turns) {
+                    // Convert each TurnRecord to ChatMessage[] (user + assistant).
+                    // Each turn produces: { user } + { assistant } messages.
+                    const msgs = [];
+                    for (const turn of resp.turns) {
+                        msgs.push({
+                            id: `hist-user-${turn.id}`,
+                            role: "user",
+                            content: turn.question,
+                            timestamp: turn.startedAt ? Date.parse(turn.startedAt) : Date.now(),
+                        });
+                        if (turn.answer) {
+                            msgs.push({
+                                id: `hist-assistant-${turn.id}`,
+                                role: "assistant",
+                                content: turn.answer,
+                                timestamp: turn.endedAt ? Date.parse(turn.endedAt) : Date.now(),
+                                sources: turn.sources,
+                                related: turn.related,
+                            });
+                        }
+                    }
+                    setHydratedHistory(msgs);
+                }
+            }
+            catch {
+                // Backend doesn't expose getThread yet — start with empty history.
+                // Chat will still work; just without hydration.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [initialThreadId, anvilClient]);
     // Pending interrupt state
     const [pendingInterrupt, setPendingInterrupt] = useState(null);
     const pendingInterruptRef = useRef(null);
@@ -122,8 +170,10 @@ export function useAgent(options = {}) {
     useEffect(() => {
         sessionRef.current = session;
     });
-    // Chat messages + Agent state
-    const { messages } = useChat(session.sessionId, sharedEvents);
+    // Chat messages + Agent state.
+    // Hydrated history is prepended so prior turns are visible immediately.
+    const { messages: liveMessages } = useChat(session.sessionId, sharedEvents);
+    const messages = useMemo(() => (hydratedHistory.length > 0 ? [...hydratedHistory, ...liveMessages] : liveMessages), [hydratedHistory, liveMessages]);
     const agentState = useAgentState({ sharedEvents });
     // Derived state
     const isProcessing = session.status === "running" || session.status === "starting";
@@ -137,8 +187,8 @@ export function useAgent(options = {}) {
         cancelRef.current = session.cancel;
     }, [session.start, session.cancel]);
     // Track the active thread ID in state so consumers re-render when it changes.
-    const [threadId, setThreadId] = useState(null);
-    const threadIdRef = useRef(null);
+    const [threadId, setThreadId] = useState(initialThreadId ?? null);
+    const threadIdRef = useRef(initialThreadId ?? null);
     // Send: start a new run or continue. When `opts.threadId` is given
     // (or the previous run produced one), events from this session are
     // APPENDED to the existing log so multi-turn history stays visible.
@@ -215,6 +265,7 @@ export function useAgent(options = {}) {
         approveInterrupt,
         rejectInterrupt,
         events: sharedEvents,
+        renderTool,
         session,
     };
 }
