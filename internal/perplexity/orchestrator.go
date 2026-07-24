@@ -218,8 +218,8 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	// that IS the answer — skip search/synthesize entirely.
 	if frontendAnswer != "" {
 		// Ensure the user message is in history for this turn
-		updatedHistory := append(opts.History, ChatMessage{Role: "user", Content: question})
-		updatedHistory = append(updatedHistory, ChatMessage{Role: "assistant", Content: frontendAnswer})
+		updatedHistory := append(opts.History, Message{Role: "user", Content: question})
+		updatedHistory = append(updatedHistory, Message{Role: "assistant", Content: frontendAnswer})
 		return &Result{Answer: frontendAnswer, Sources: []Source{}, Related: []string{}, History: updatedHistory}, nil
 	}
 
