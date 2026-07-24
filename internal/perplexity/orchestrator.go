@@ -204,12 +204,19 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	// search/synthesize. Useful for "change background to dark blue"
 	// style requests where the user wants immediate UI feedback.
 	// When no frontend tools are registered this is a no-op.
-	if _, err := o.tryFrontendTools(ctx, question, onEvent, opts.History, opts.FrontendTools); err != nil {
+	frontendAnswer, err := o.tryFrontendTools(ctx, question, onEvent, opts.History, opts.FrontendTools)
+	if err != nil {
 		// Non-fatal — log and continue with the main flow.
 		emit(EventError, map[string]interface{}{
 			"message": err.Error(),
 			"step":    "frontend_tools",
 		})
+	}
+	// If the frontend tool step produced a final text answer (i.e.
+	// the LLM acknowledged what it did after calling the tool),
+	// that IS the answer — skip search/synthesize entirely.
+	if frontendAnswer != "" {
+		return &Result{Answer: frontendAnswer, Sources: []Source{}, Related: []string{}}, nil
 	}
 
 	// If no search needed (chat-only), just synthesize directly
@@ -687,7 +694,7 @@ func (o *Orchestrator) tryFrontendTools(
 Rules:
 - If the user's request is about the chat UI, you MUST use a tool call. Do NOT write prose or CSS code.
 - If the request is purely informational (e.g. "what's the weather"), respond with a brief one-sentence acknowledgement and stop. Do NOT call a tool.
-- After a tool returns its result, briefly acknowledge what happened in one sentence. Do NOT call another tool unless absolutely needed.
+- After a tool returns its result, you MUST tell the user exactly what you did. For example: "I've changed the background to crimson red." Never claim you cannot do something you just successfully did.
 - Keep responses very short — this is just a tool-calling step, not the main answer.`
 
 	msgs := []Message{}
@@ -775,18 +782,25 @@ Rules:
 			}
 
 			// Emit the matching tool.result event so the client
-			// log is consistent.
-			emit(EventToolResult, map[string]interface{}{
-				"id":     callID,
-				"name":   tc.Name,
-				"result": json.RawMessage(resultJSON),
-			})
+					// log is consistent.
+					emit(EventToolResult, map[string]interface{}{
+						"id":     callID,
+						"name":   tc.Name,
+						"result": json.RawMessage(resultJSON),
+					})
 
-			// Feed the result back to the LLM.
-			msgs = append(msgs,
-				Message{Role: "assistant", Content: ""}, // tool call round
-				Message{Role: "user", Content: fmt.Sprintf("Tool %s returned: %s. If you need more, call another tool. Otherwise acknowledge briefly and stop.", tc.Name, string(resultJSON))},
-			)
+					// Feed the result back to the LLM using the proper OpenAI
+					// tool-result message shape so the model connects its own
+					// tool call to the result.
+					msgs = append(msgs,
+						Message{Role: "assistant", ToolCalls: []ToolCall{tc}},
+						Message{
+							Role:       "tool",
+							Content:    string(resultJSON),
+							ToolCallID: callID,
+							Name:       tc.Name,
+						},
+					)
 		}
 	}
 

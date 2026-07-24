@@ -120,8 +120,22 @@ type openAIRequest struct {
 }
 
 type openAIMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string           `json:"role"`
+	Content    string           `json:"content,omitempty"`
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Name       string           `json:"name,omitempty"`
+}
+
+// openAIToolCall is the OpenAI wire shape for a tool call inside a
+// message (assistant messages that called tools carry these).
+type openAIToolCall struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
 }
 
 type openAITool struct {
@@ -159,7 +173,22 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 		body.MaxTokens = 4096
 	}
 	for _, m := range req.Messages {
-		body.Messages = append(body.Messages, openAIMessage{Role: m.Role, Content: m.Content})
+		oam := openAIMessage{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCallID: m.ToolCallID,
+			Name:       m.Name,
+		}
+		// Convert tool calls (assistant messages).
+		for _, tc := range m.ToolCalls {
+			var otc openAIToolCall
+			otc.ID = tc.ID
+			otc.Type = "function"
+			otc.Function.Name = tc.Name
+			otc.Function.Arguments = string(tc.Input)
+			oam.ToolCalls = append(oam.ToolCalls, otc)
+		}
+		body.Messages = append(body.Messages, oam)
 	}
 	for _, t := range req.Tools {
 		ot := openAITool{Type: "function"}
