@@ -192,7 +192,7 @@ export function ChatUI({
 
       {/* Messages */}
       <div className="min-h-0 flex-1 overflow-hidden">
-        <Conversation className="h-full">
+        <Conversation className="h-full" style={{ background: "var(--anvil-bg)" }}>
           <ConversationContent>
             {showEmpty && (
               <div className="flex flex-col items-center justify-center gap-3 px-4 py-16 text-center sm:py-24">
@@ -371,7 +371,7 @@ function ChatMessageRow({
             </div>
             {msg.toolResult && (
               <div className="text-xs text-green-600 dark:text-green-400 font-mono">
-                Result: {JSON.stringify(msg.toolResult).slice(0, 200)}
+                Result: {JSON.stringify(msg.toolResult as any).slice(0, 200)}
               </div>
             )}
             {msg.toolError && (
