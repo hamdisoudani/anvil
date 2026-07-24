@@ -688,13 +688,13 @@ func (o *Orchestrator) tryFrontendTools(
 
 	emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "running", ""))
 
-	systemPrompt := `You are an AI assistant with access to browser-side UI tools. You MUST call one of the available tools if the user's request relates to changing, modifying, or interacting with the chat interface (colors, theme, layout, scroll, focus, mode, etc).
+	systemPrompt := `You are an AI assistant with access to browser-side UI tools. You MUST call one of the available tools if the user's request relates to changing, modifying, or interacting with the chat UI's appearance, focus, or layout. The available tools are: [name, description, params]. If you call a tool, you will receive the result and can decide whether to call another tool or write your final response.
 
 Rules:
 - If the user's request is about the chat UI, you MUST use a tool call. Do NOT write prose or CSS code.
 - If the request is purely informational (e.g. "what's the weather"), respond with a brief one-sentence acknowledgement and stop. Do NOT call a tool.
-- After a tool returns its result, you MUST tell the user exactly what you did. For example: "I've changed the background to crimson red." Never claim you cannot do something you just successfully did.
-- Keep responses very short — this is just a tool-calling step, not the main answer.`
+- After a tool returns its result, you MUST tell the user exactly what you did. For example: "I've changed the background to crimson." Never claim you cannot do something you just successfully did.
+- Use valid CSS color names (e.g., "crimson", "darkblue", "forestgreen") or hex codes (e.g., "#DC143C", "#03055B") for color parameters.`
 
 	msgs := []Message{}
 	// Trim history to last few exchanges (keep context manageable).
