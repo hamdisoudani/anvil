@@ -133,6 +133,14 @@ type openAITool struct {
 	} `json:"function"`
 }
 
+// logFirst returns the first n bytes of a string.
+func logFirst(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
 // Stream implements the LLMRouter interface.
 func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onDelta func(string)) (LLMResponse, error) {
 	if r.APIKey == "" {
@@ -170,6 +178,8 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 	}
 
 	jsonBody, _ := json.Marshal(body)
+	// DEBUG: log the exact body we're sending so we can diagnose wire issues.
+	log.Printf("LLM_REQUEST: %s", logFirst(string(jsonBody), 1200))
 	url := strings.TrimRight(r.BaseURL, "/") + "/chat/completions"
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(jsonBody)))
 	if err != nil {
