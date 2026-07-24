@@ -633,6 +633,11 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
       setLastEventId(e.eventId);
       onEventRef.current?.(e);
       console.log("[ANVIL-DEBUG] event type=" + e.type + " payload=" + JSON.stringify((e as any).payload || {}).substring(0, 200));
+      // Persist to a window global so the test harness can inspect.
+      if (typeof window !== "undefined") {
+        const w = window as unknown as { __anvilDebug?: unknown[] };
+        (w.__anvilDebug ||= []).push({ type: e.type, payload: (e as any).payload });
+      }
 
       // Handle tool calls — either via onToolCall or the registry
       if (e.type === "tool.call") {
