@@ -15,6 +15,8 @@
 package perplexity
 
 import (
+	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -88,6 +90,7 @@ func (s *TurnStore) Record(e wire.Event) {
 	if !ok {
 		// New session. Initialize accumulator from session.start.
 		if e.Type != wire.EventSessionStart {
+			fmt.Fprintf(os.Stderr, "[TurnStore] skip non-start event type=%s session=%s\n", e.Type, e.SessionID)
 			// Skip — we only start recording from session.start.
 			return
 		}
@@ -99,6 +102,7 @@ func (s *TurnStore) Record(e wire.Event) {
 		// (the handler publishes via map, not typed structs), so we
 		// accept both shapes here. ThreadID also accepts "thread_id"
 		// (snake) since the handler emits snake_case historically.
+		fmt.Fprintf(os.Stderr, "[TurnStore] init session=%s type=%T\n", e.SessionID, e.Payload)
 		if p, ok := e.Payload.(wire.SessionStartPayload); ok {
 			acc.threadID = p.ThreadID
 			acc.question = p.Task
@@ -112,6 +116,7 @@ func (s *TurnStore) Record(e wire.Event) {
 				acc.question = q
 			}
 		}
+		fmt.Fprintf(os.Stderr, "[TurnStore] init done: thread=%s q=%s\n", acc.threadID, acc.question)
 		s.pending[e.SessionID] = acc
 	}
 
