@@ -197,6 +197,14 @@ func (s *TurnStore) Record(e wire.Event) {
 			if p.Reason != "" {
 				acc.doneReason = p.Reason
 			}
+		} else if m, ok := e.Payload.(map[string]interface{}); ok {
+			if ans, ok := m["answer"].(string); ok && ans != "" {
+				acc.answer.Reset()
+				acc.answer.WriteString(ans)
+			}
+			if srcs, ok := m["sources"].([]wire.AgentSource); ok {
+				acc.sources = srcs
+			}
 		}
 		s.flushLocked(acc)
 	}
