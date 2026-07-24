@@ -95,9 +95,22 @@ func (s *TurnStore) Record(e wire.Event) {
 			sessionID: e.SessionID,
 			startedAt:  e.CreatedAt,
 		}
+		// The bus forwards events with map[string]interface{} payloads
+		// (the handler publishes via map, not typed structs), so we
+		// accept both shapes here. ThreadID also accepts "thread_id"
+		// (snake) since the handler emits snake_case historically.
 		if p, ok := e.Payload.(wire.SessionStartPayload); ok {
 			acc.threadID = p.ThreadID
 			acc.question = p.Task
+		} else if m, ok := e.Payload.(map[string]interface{}); ok {
+			if tid, ok := m["threadId"].(string); ok {
+				acc.threadID = tid
+			} else if tid, ok := m["thread_id"].(string); ok {
+				acc.threadID = tid
+			}
+			if q, ok := m["task"].(string); ok {
+				acc.question = q
+			}
 		}
 		s.pending[e.SessionID] = acc
 	}
