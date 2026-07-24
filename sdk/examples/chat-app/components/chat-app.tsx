@@ -65,6 +65,20 @@ function ChatSurface() {
             "--anvil-bg",
           );
           document.documentElement.style.setProperty("--anvil-bg", color);
+          // Inject/replace a global rule that overrides the chat
+          // surface's Tailwind `bg-background`. ChatUI's <main> paints
+          // its own dark color over our wrapper, so we need a
+          // high-specificity rule that wins.
+          let style = document.getElementById(
+            "anvil-bg-override",
+          ) as HTMLStyleElement | null;
+          if (!style) {
+            style = document.createElement("style");
+            style.id = "anvil-bg-override";
+            document.head.appendChild(style);
+          }
+          style.textContent =
+            `main.bg-background, .bg-background { background-color: ${color} !important; }`;
           return { applied: color, previous: previous || null };
         },
       },
