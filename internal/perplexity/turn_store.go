@@ -15,8 +15,6 @@
 package perplexity
 
 import (
-	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -117,7 +115,6 @@ func (s *TurnStore) Record(e wire.Event) {
 				acc.question = q
 			}
 		}
-		fmt.Fprintf(os.Stderr, "[TurnStore] init session=%s thread=%s q=%s\n", e.SessionID, acc.threadID, acc.question)
 		s.pending[e.SessionID] = acc
 	}
 
