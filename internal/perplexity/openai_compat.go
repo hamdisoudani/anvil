@@ -332,6 +332,7 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 		})
 	}
 
+	log.Printf("LLM_RESPONSE: tool_calls=%d content=%q", len(responseToolCalls), logFirst(fullText.String(), 200))
 	return LLMResponse{
 		Content:    fullText.String(),
 		ToolCalls:  responseToolCalls,
