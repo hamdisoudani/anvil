@@ -152,9 +152,10 @@ export function ChatUI({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col bg-background text-foreground",
+        "flex h-full min-h-0 flex-col text-foreground",
         className,
       )}
+      style={{ background: "var(--anvil-bg, transparent)" }}
     >
       {/* Header */}
       <header
@@ -353,7 +354,36 @@ function ChatMessageRow({
       </Message>
     );
   }
-  if (msg.role === "tool") return null;
+  if (msg.role === "tool") {
+    // Render tool calls with input and result
+    const isFrontend = msg.toolName && msg.toolName === "change_background_color";
+    return (
+      <Message from="assistant">
+        <MessageAvatar name="Tool" />
+        <MessageContent variant="flat">
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-mono px-2 py-0.5 rounded bg-muted">
+                {msg.toolName || "tool"}
+              </span>
+              <span className="opacity-60">→</span>
+              <span className="font-mono text-xs">{JSON.stringify(msg.toolInput).slice(0, 100)}</span>
+            </div>
+            {msg.toolResult && (
+              <div className="text-xs text-green-600 dark:text-green-400 font-mono">
+                Result: {JSON.stringify(msg.toolResult).slice(0, 200)}
+              </div>
+            )}
+            {msg.toolError && (
+              <div className="text-xs text-red-600 dark:text-red-400 font-mono">
+                Error: {String(msg.toolError).slice(0, 200)}
+              </div>
+            )}
+          </div>
+        </MessageContent>
+      </Message>
+    );
+  }
 
   const sources = msg.sources;
   const streaming = isLast && isProcessing;
