@@ -581,35 +581,34 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 	})
 
 	result, err := h.Orchestrator.Run(ctx, question, func(e Event) {
-		log.Printf("event: session=%s type=%s payload=%s", sessionID, e.Type, logFirst(fmt.Sprintf("%v", e.Payload), 200))
-		// If this is a frontend tool call, register the pending
-		// tool by call_id so handleTool can deliver the result.
-		if e.Type == EventToolCall {
-			if callID, ok := e.Payload["id"].(string); ok {
-				if name, ok := e.Payload["name"].(string); ok {
-					if isFrontend, ok := e.Payload["is_frontend"].(bool); ok && isFrontend {
-						// Search session tools first, then hardcoded.
-						var tool *FrontendTool
-						h.sessionToolsMu.Lock()
-						if tools, ok := h.sessionTools[sessionID]; ok {
-							tool = findFrontendToolIn(tools, name)
-						}
-						h.sessionToolsMu.Unlock()
-						if tool == nil {
-							tool = h.Orchestrator.findFrontendTool(name)
-						}
-						if tool != nil {
-							h.pendingMu.Lock()
-							h.pendingFrontend[callID] = tool
-							h.pendingMu.Unlock()
+			// If this is a frontend tool call, register the pending
+			// tool by call_id so handleTool can deliver the result.
+			if e.Type == EventToolCall || e.Type == EventFrontendCall {
+				if callID, ok := e.Payload["id"].(string); ok {
+					if name, ok := e.Payload["name"].(string); ok {
+						if isFrontend, ok := e.Payload["is_frontend"].(bool); ok && isFrontend {
+							// Search session tools first, then hardcoded.
+							var tool *FrontendTool
+							h.sessionToolsMu.Lock()
+							if tools, ok := h.sessionTools[sessionID]; ok {
+								tool = findFrontendToolIn(tools, name)
+							}
+							h.sessionToolsMu.Unlock()
+							if tool == nil {
+								tool = findFrontendToolIn(h.Orchestrator.FrontendTools, name)
+							}
+							if tool != nil {
+								if !tool.RegisterCall(callID, 30*time.Second) {
+									log.Printf("tool.call: warning — call_id %s already pending", callID)
+								}
+							}
 						}
 					}
 				}
 			}
-		}
-		h.Bus.Publish(sessionID, threadID, e)
-	}, RunOpts{History: history, Focus: focus, FrontendTools: sessionFrontendTools})
-	if err != nil {
+			h.Bus.Publish(sessionID, threadID, e)
+		}, RunOpts{History: history, Focus: focus, FrontendTools: sessionFrontendTools})
+		if err != nil {
 		if ctx.Err() != nil {
 			log.Printf("session %s: cancelled", sessionID)
 			h.Bus.Publish(sessionID, threadID, Event{Type: EventError, Payload: map[string]interface{}{

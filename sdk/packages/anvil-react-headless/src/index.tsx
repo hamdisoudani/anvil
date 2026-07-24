@@ -632,17 +632,10 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
       setEventCount((c) => c + 1);
       setLastEventId(e.eventId);
       onEventRef.current?.(e);
-      console.log("[ANVIL-DEBUG] event type=" + e.type + " payload=" + JSON.stringify((e as any).payload || {}).substring(0, 200));
-      // Persist to a window global so the test harness can inspect.
-      if (typeof window !== "undefined") {
-        const w = window as unknown as { __anvilDebug?: unknown[] };
-        (w.__anvilDebug ||= []).push({ type: e.type, payload: (e as any).payload });
-      }
 
       // Handle tool calls — either via onToolCall or the registry
       if (e.type === "tool.call") {
         const p = e.payload as { id: string; name: string; input: unknown; is_frontend?: boolean };
-        console.log("[ANVIL-DEBUG] tool.call event:", JSON.stringify(p));
         if (p.is_frontend) {
           // Map server's "id" → callId and preserve is_frontend so
           // useAgent can open a PendingInterrupt (HITL) when no local
