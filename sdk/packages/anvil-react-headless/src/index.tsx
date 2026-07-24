@@ -632,6 +632,7 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
       setEventCount((c) => c + 1);
       setLastEventId(e.eventId);
       onEventRef.current?.(e);
+      console.log("[ANVIL-DEBUG] event type=" + e.type + " payload=" + JSON.stringify((e as any).payload || {}).substring(0, 200));
 
       // Handle tool calls — either via onToolCall or the registry
       if (e.type === "tool.call") {
