@@ -371,7 +371,7 @@ function ChatMessageRow({
             </div>
             {msg.toolResult && (
               <div className="text-xs text-green-600 dark:text-green-400 font-mono">
-                {String("Result: " + JSON.stringify(msg.toolResult as any).slice(0, 200))}
+                {"Result: " + (JSON.stringify(msg.toolResult as any)).slice(0, 200)}
               </div>
             )}
             {msg.toolError && (
