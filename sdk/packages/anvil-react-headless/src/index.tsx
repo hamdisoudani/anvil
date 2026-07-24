@@ -990,17 +990,50 @@ export function useChat(sessionId: string | null, events?: AnyAnvilEvent[]) {
         case "done": {
           const p = e.payload as any;
           
-          // Mark the last assistant message as done
-          for (let i = out.length - 1; i >= 0; i--) {
-            const m = out[i];
-            if (m && m.role === "assistant") {
-              out[i] = { 
-                ...m, 
+          // If the answer was set in done.payload (non-streaming),
+          // ensure an assistant message exists.
+          const doneAnswer = p.answer as string | undefined;
+          if (doneAnswer && doneAnswer.length > 0) {
+            // Find or create the last assistant message
+            let assistantIdx = -1;
+            for (let i = out.length - 1; i >= 0; i--) {
+              if (out[i] && out[i]!.role === "assistant") {
+                assistantIdx = i;
+                break;
+              }
+            }
+            if (assistantIdx < 0) {
+              // No assistant yet — create one with the done answer
+              out.push({
+                id: `assistant-done-${e.eventId}`,
+                role: "assistant",
+                content: doneAnswer,
+                timestamp: Date.parse(e.createdAt),
+                sources: p.sources,
+                related: p.related,
+              });
+            } else {
+              out[assistantIdx] = { 
+                ...out[assistantIdx]!,
+                content: out[assistantIdx]!.content || doneAnswer,
                 isStreaming: false,
-                sources: m.sources ?? p.sources ?? undefined, 
-                related: m.related ?? p.related ?? undefined, 
+                sources: out[assistantIdx]!.sources ?? p.sources ?? undefined, 
+                related: out[assistantIdx]!.related ?? p.related ?? undefined, 
               };
-              break;
+            }
+          } else {
+            // Mark the last assistant message as done
+            for (let i = out.length - 1; i >= 0; i--) {
+              const m = out[i];
+              if (m && m.role === "assistant") {
+                out[i] = { 
+                  ...m, 
+                  isStreaming: false,
+                  sources: m.sources ?? p.sources ?? undefined, 
+                  related: m.related ?? p.related ?? undefined, 
+                };
+                break;
+              }
             }
           }
           

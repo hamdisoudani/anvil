@@ -737,10 +737,17 @@ func (o *Orchestrator) tryFrontendTools(
 				}
 
 				// If no tool calls — we have a final text answer.
-				if len(resp.ToolCalls) == 0 {
-					emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "done", "no tool call"))
-					return strings.TrimSpace(resp.Content), nil
-				}
+								if len(resp.ToolCalls) == 0 {
+									emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "done", "no tool call"))
+									// Emit the answer as a chunk so the UI streams it
+									// (the useChat hook only renders assistant text
+									// that came through answer.chunk events).
+									text := strings.TrimSpace(resp.Content)
+									if text != "" {
+										emit(EventAnswerChunk, map[string]interface{}{"delta": text})
+									}
+									return text, nil
+								}
 
 		// Execute each tool call (typically just one per round).
 		for _, tc := range resp.ToolCalls {
