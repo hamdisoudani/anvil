@@ -598,9 +598,15 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 								tool = findFrontendToolIn(h.Orchestrator.FrontendTools, name)
 							}
 							if tool != nil {
-								tool.RegisterCall(callID)
-								log.Printf("tool.call: registered call_id=%s name=%s", callID, name)
-							}
+														tool.RegisterCall(callID)
+														// Also register in the handler's lookup map
+														// so handleTool can find it when the browser
+														// POSTs /sessions/{id}/tool back.
+														h.pendingMu.Lock()
+														h.pendingFrontend[callID] = tool
+														h.pendingMu.Unlock()
+														log.Printf("tool.call: registered call_id=%s name=%s", callID, name)
+													}
 						}
 					}
 				}
