@@ -130,6 +130,7 @@ type Result struct {
 	Sources  []Source
 	Related  []string
 	Plan     *SearchPlan
+	History  []Message
 }
 
 // RunOpts configures a single orchestrator run.
@@ -216,7 +217,10 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	// the LLM acknowledged what it did after calling the tool),
 	// that IS the answer — skip search/synthesize entirely.
 	if frontendAnswer != "" {
-		return &Result{Answer: frontendAnswer, Sources: []Source{}, Related: []string{}}, nil
+		// Ensure the user message is in history for this turn
+		updatedHistory := append(opts.History, ChatMessage{Role: "user", Content: question})
+		updatedHistory = append(updatedHistory, ChatMessage{Role: "assistant", Content: frontendAnswer})
+		return &Result{Answer: frontendAnswer, Sources: []Source{}, Related: []string{}, History: updatedHistory}, nil
 	}
 
 	// If no search needed (chat-only), just synthesize directly
@@ -717,12 +721,32 @@ Rules:
 			Tools:        tools,
 			MaxTokens:    400,
 		}
-		// Round 0: force a tool decision. With "auto" the model often
-				// ignores available tools and writes prose like "I can't change
-				// the background, here's the hex code." For UI affordances the
-				// user wants action, not an excuse. Later rounds: let it choose.
+		// Determine if this looks like a UI affordance request.
+				// We only force a tool call when the user's intent is clearly
+				// about the chat UI (colors, theme, layout, scroll, focus, mode).
+				// Otherwise use "auto" so the model can answer normally.
+				uiKeywords := []string{
+					"background", "color", "theme", "dark mode", "light mode",
+					"layout", "scroll", "focus", "font", "size", "width", "height",
+					"sidebar", "panel", "window", "interface", "ui", "appearance",
+					"style", "crimson", "blue", "red", "green", "dark", "light",
+				}
+				questionLower := strings.ToLower(question)
+				looksLikeUIRequest := false
+				for _, k := range uiKeywords {
+					if strings.Contains(questionLower, k) {
+						looksLikeUIRequest = true
+						break
+					}
+				}
+
+				// Round 0: force tool choice ONLY for UI-looking requests.
 				if round == 0 {
-					req.ForceToolChoice = "required"
+					if looksLikeUIRequest {
+						req.ForceToolChoice = "required"
+					} else {
+						req.ForceToolChoice = "auto"
+					}
 				}
 		resp, err := o.LLM.Stream(ctx, req, nil)
 		if err != nil {

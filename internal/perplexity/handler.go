@@ -637,6 +637,7 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 		"plan":       result.Plan,
 		"thread_id":  threadID,
 		"session_id": sessionID,
+		"history":    result.History,
 	}})
 }
 
