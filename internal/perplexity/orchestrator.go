@@ -699,77 +699,48 @@ func (o *Orchestrator) tryFrontendTools(
 
 	systemPrompt := `You are an AI assistant with access to browser-side UI tools. You MUST call one of the available tools if the user's request relates to changing, modifying, or interacting with the chat UI's appearance, focus, or layout. The available tools are: [name, description, params]. If you call a tool, you will receive the result and can decide whether to call another tool or write your final response.
 
-Rules:
-- If the user's request is about the chat UI, you MUST use a tool call. Do NOT write prose or CSS code.
-- If the request is purely informational (e.g. "what's the weather"), respond with a brief one-sentence acknowledgement and stop. Do NOT call a tool.
-- After a tool returns its result, you MUST tell the user exactly what you did. For example: "I've changed the background to crimson." Never claim you cannot do something you just successfully did.
-- Use valid CSS color names (e.g., "crimson", "darkblue", "forestgreen") or hex codes (e.g., "#DC143C", "#03055B") for color parameters.`
+	Rules:
+	- If the user's request is about the chat UI, you MUST use a tool call. Do NOT write prose or CSS code.
+	- If the request is purely informational (e.g. "what's the weather"), respond with a brief one-sentence acknowledgement and stop. Do NOT call a tool.
+	- After a tool returns its result, you MUST tell the user exactly what you did. For example: "I've changed the background to crimson." Never claim you cannot do something you just successfully did.
+	- Use valid CSS color names (e.g., "crimson", "darkblue", "forestgreen") or hex codes (e.g., "#DC143C", "#03055B") for color parameters.`
 
-	msgs := []Message{}
-	// Trim history to last few exchanges (keep context manageable).
-	if len(history) > 4 {
-		msgs = append(msgs, history[len(history)-4:]...)
-	} else {
-		msgs = append(msgs, history...)
-	}
-	msgs = append(msgs, Message{Role: "user", Content: question})
-
-	tools := frontendToolSpecsFrom(allTools)
-
-	// Loop up to N rounds in case the LLM wants multiple tools.
-	const maxRounds = 3
-	for round := 0; round < maxRounds; round++ {
-		req := LLMRequest{
-			SystemPrompt: systemPrompt,
-			Messages:     msgs,
-			Tools:        tools,
-			MaxTokens:    400,
+		msgs := []Message{}
+		// Trim history to last few exchanges (keep context manageable).
+		if len(history) > 4 {
+			msgs = append(msgs, history[len(history)-4:]...)
+		} else {
+			msgs = append(msgs, history...)
 		}
-		// Determine if this looks like a UI affordance request.
-				// We only force a tool call when the user's intent is clearly
-				// about the chat UI (colors, theme, layout, scroll, focus, mode).
-				// Otherwise use "auto" so the model can answer normally.
-				uiKeywords := []string{
-						"background", "color", "theme", "dark mode", "light mode",
-						"layout", "scroll", "focus", "font", "size", "width", "height",
-						"sidebar", "panel", "window", "interface", "ui", "appearance",
-						"style", "crimson", "blue", "red", "green", "dark", "light",
-					}
-					// Match whole words only to avoid false positives like "hi" -> "high"
-					questionLower := strings.ToLower(question)
-					words := strings.Fields(questionLower)
-					looksLikeUIRequest := false
-					for _, k := range uiKeywords {
-						for _, w := range words {
-							if w == k || strings.HasPrefix(w, k) || strings.HasSuffix(w, k) {
-								looksLikeUIRequest = true
-								break
-							}
-						}
-						if looksLikeUIRequest {
-							break
-						}
-					}
+		msgs = append(msgs, Message{Role: "user", Content: question})
 
-				// Round 0: force tool choice ONLY for UI-looking requests.
-				if round == 0 {
-					if looksLikeUIRequest {
-						req.ForceToolChoice = "required"
-					} else {
-						req.ForceToolChoice = "auto"
-					}
+		tools := frontendToolSpecsFrom(allTools)
+
+			// Loop up to N rounds in case the LLM wants multiple tools.
+			const maxRounds = 3
+			for round := 0; round < maxRounds; round++ {
+				req := LLMRequest{
+					SystemPrompt: systemPrompt,
+					Messages:     msgs,
+					Tools:        tools,
+					MaxTokens:    400,
 				}
-		resp, err := o.LLM.Stream(ctx, req, nil)
-		if err != nil {
-			emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "error", err.Error()))
-			return "", fmt.Errorf("frontend tools LLM call: %w", err)
-		}
+				// Round 0: let the model decide. The system prompt guides it
+				// to call the tool when the user's request relates to the UI.
+				if round == 0 {
+					req.ForceToolChoice = "auto"
+				}
+				resp, err := o.LLM.Stream(ctx, req, nil)
+				if err != nil {
+					emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "error", err.Error()))
+					return "", fmt.Errorf("frontend tools LLM call: %w", err)
+				}
 
-		// If no tool calls — we have a final text answer.
-		if len(resp.ToolCalls) == 0 {
-			emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "done", "no tool call"))
-			return strings.TrimSpace(resp.Content), nil
-		}
+				// If no tool calls — we have a final text answer.
+				if len(resp.ToolCalls) == 0 {
+					emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "done", "no tool call"))
+					return strings.TrimSpace(resp.Content), nil
+				}
 
 		// Execute each tool call (typically just one per round).
 		for _, tc := range resp.ToolCalls {
