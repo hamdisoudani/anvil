@@ -142,6 +142,10 @@ type RunOpts struct {
 	// FrontendTools are browser-side tools sent by the client with the
 	// task. They override any tools hardcoded on the Orchestrator.
 	FrontendTools []*FrontendTool
+	// ThreadID is the current thread identifier.
+	ThreadID string
+	// SessionID is the current session identifier.
+	SessionID string
 }
 
 // planStep is a small helper to emit a PlanStep event with string ID.
@@ -726,19 +730,26 @@ Rules:
 				// about the chat UI (colors, theme, layout, scroll, focus, mode).
 				// Otherwise use "auto" so the model can answer normally.
 				uiKeywords := []string{
-					"background", "color", "theme", "dark mode", "light mode",
-					"layout", "scroll", "focus", "font", "size", "width", "height",
-					"sidebar", "panel", "window", "interface", "ui", "appearance",
-					"style", "crimson", "blue", "red", "green", "dark", "light",
-				}
-				questionLower := strings.ToLower(question)
-				looksLikeUIRequest := false
-				for _, k := range uiKeywords {
-					if strings.Contains(questionLower, k) {
-						looksLikeUIRequest = true
-						break
+						"background", "color", "theme", "dark mode", "light mode",
+						"layout", "scroll", "focus", "font", "size", "width", "height",
+						"sidebar", "panel", "window", "interface", "ui", "appearance",
+						"style", "crimson", "blue", "red", "green", "dark", "light",
 					}
-				}
+					// Match whole words only to avoid false positives like "hi" -> "high"
+					questionLower := strings.ToLower(question)
+					words := strings.Fields(questionLower)
+					looksLikeUIRequest := false
+					for _, k := range uiKeywords {
+						for _, w := range words {
+							if w == k || strings.HasPrefix(w, k) || strings.HasSuffix(w, k) {
+								looksLikeUIRequest = true
+								break
+							}
+						}
+						if looksLikeUIRequest {
+							break
+						}
+					}
 
 				// Round 0: force tool choice ONLY for UI-looking requests.
 				if round == 0 {
