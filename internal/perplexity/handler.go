@@ -581,6 +581,7 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 	})
 
 	result, err := h.Orchestrator.Run(ctx, question, func(e Event) {
+		log.Printf("event: session=%s type=%s payload=%s", sessionID, e.Type, logFirst(fmt.Sprintf("%v", e.Payload), 200))
 		// If this is a frontend tool call, register the pending
 		// tool by call_id so handleTool can deliver the result.
 		if e.Type == EventToolCall {
