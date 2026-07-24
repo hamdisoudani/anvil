@@ -710,6 +710,11 @@ Rules:
 			Tools:        tools,
 			MaxTokens:    400,
 		}
+		// Round 0: force the model to decide (call a tool or briefly
+		// acknowledge). Later rounds: let it choose freely.
+		if round == 0 {
+			req.ForceToolChoice = "required"
+		}
 		resp, err := o.LLM.Stream(ctx, req, nil)
 		if err != nil {
 			emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "error", err.Error()))

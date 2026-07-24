@@ -23,6 +23,9 @@ type LLMRequest struct {
 	Messages     []Message
 	Tools        []Tool
 	MaxTokens    int
+	// ForceToolChoice: "auto" | "required" | "" (omit).
+	// When "required", the model MUST call a tool (no text response).
+	ForceToolChoice string
 }
 
 // LLMResponse is what the router returns.

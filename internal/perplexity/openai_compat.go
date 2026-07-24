@@ -162,7 +162,11 @@ func (r *OpenAICompatibleRouter) Stream(ctx context.Context, req LLMRequest, onD
 	}
 	// If we have tools, tell the model it may call them.
 	if len(body.Tools) > 0 {
-		body.ToolChoice = "auto"
+		if req.ForceToolChoice != "" {
+			body.ToolChoice = req.ForceToolChoice
+		} else {
+			body.ToolChoice = "auto"
+		}
 	}
 
 	jsonBody, _ := json.Marshal(body)
