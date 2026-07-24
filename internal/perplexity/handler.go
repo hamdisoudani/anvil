@@ -598,9 +598,8 @@ func (h *Handler) runSearch(ctx context.Context, sessionID, threadID, question, 
 								tool = findFrontendToolIn(h.Orchestrator.FrontendTools, name)
 							}
 							if tool != nil {
-								if !tool.RegisterCall(callID, 30*time.Second) {
-									log.Printf("tool.call: warning — call_id %s already pending", callID)
-								}
+								tool.RegisterCall(callID)
+								log.Printf("tool.call: registered call_id=%s name=%s", callID, name)
 							}
 						}
 					}
