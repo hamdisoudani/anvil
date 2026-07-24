@@ -717,14 +717,13 @@ Rules:
 			Tools:        tools,
 			MaxTokens:    400,
 		}
-		// Round 0: force the model to decide (call a tool or briefly
-		// acknowledge). Later rounds: let it choose freely. We rely on the
-			// system prompt to nudge the model toward tool calls when the user's
-			// request relates to the UI — `tool_choice: required` is too
-			// aggressive for unrelated queries.
-			if round == 0 {
-				req.ForceToolChoice = "auto"
-			}
+		// Round 0: force a tool decision. With "auto" the model often
+				// ignores available tools and writes prose like "I can't change
+				// the background, here's the hex code." For UI affordances the
+				// user wants action, not an excuse. Later rounds: let it choose.
+				if round == 0 {
+					req.ForceToolChoice = "required"
+				}
 		resp, err := o.LLM.Stream(ctx, req, nil)
 		if err != nil {
 			emit(EventPlanStep, planStepPayload("frontend_tools", "Checking for UI affordances", "error", err.Error()))
