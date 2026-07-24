@@ -201,9 +201,11 @@ func (o *Orchestrator) Run(ctx context.Context, question string, onEvent func(Ev
 	})
 
 	// ── Step 1.5: Frontend tools (UI affordances) ─────────────────
-	log.Printf("Step 1.5: frontend tools check, opts.FrontendTools=%d session=%d", len(opts.FrontendTools), 0)
+	// Give the LLM one chance to call a browser-side tool BEFORE
+	// search/synthesize. Useful for "change background to dark blue"
+	// style requests where the user wants immediate UI feedback.
+	// When no frontend tools are registered this is a no-op.
 	frontendAnswer, err := o.tryFrontendTools(ctx, question, onEvent, opts.History, opts.FrontendTools)
-	log.Printf("Step 1.5: frontendAnswer=%q err=%v", frontendAnswer, err)
 	if err != nil {
 		// Non-fatal — log and continue with the main flow.
 		emit(EventError, map[string]interface{}{
@@ -706,7 +708,6 @@ Rules:
 	msgs = append(msgs, Message{Role: "user", Content: question})
 
 	tools := frontendToolSpecsFrom(allTools)
-	log.Printf("tryFrontendTools: tools=%d", len(tools))
 
 	// Loop up to N rounds in case the LLM wants multiple tools.
 	const maxRounds = 3
