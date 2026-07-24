@@ -636,6 +636,7 @@ export function useSession(opts: UseSessionOptions = {}): UseSessionResult {
       // Handle tool calls — either via onToolCall or the registry
       if (e.type === "tool.call") {
         const p = e.payload as { id: string; name: string; input: unknown; is_frontend?: boolean };
+        console.log("[ANVIL-DEBUG] tool.call event:", JSON.stringify(p));
         if (p.is_frontend) {
           // Map server's "id" → callId and preserve is_frontend so
           // useAgent can open a PendingInterrupt (HITL) when no local

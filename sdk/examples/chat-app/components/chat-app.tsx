@@ -61,10 +61,12 @@ function ChatSurface() {
           if (typeof window === "undefined") {
             return { applied: color, previous: null };
           }
+          console.log("[ANVIL-DEBUG] change_background_color execute called with", color);
           const previous = document.documentElement.style.getPropertyValue(
             "--anvil-bg",
           );
           document.documentElement.style.setProperty("--anvil-bg", color);
+          console.log("[ANVIL-DEBUG] bg applied", color);
           return { applied: color, previous: previous || null };
         },
       },
