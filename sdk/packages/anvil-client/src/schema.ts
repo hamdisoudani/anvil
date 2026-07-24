@@ -169,8 +169,10 @@ export interface ToolCallPayload {
   name: string;
   /** Tool input arguments. */
   input: unknown;
-  /** Optional call id (for matching tool_result). */
-  callId?: string;
+  /** Call id (matches the orchestrator's `id` key on the wire). */
+  id: string;
+  /** True for browser-side frontend tools (HITL/interrupt). */
+  is_frontend?: boolean;
 }
 
 export interface ToolResultPayload {

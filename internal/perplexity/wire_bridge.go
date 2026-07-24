@@ -57,6 +57,15 @@ func decodePayload(t EventType, raw map[string]interface{}) any {
 	if raw == nil {
 		raw = map[string]interface{}{}
 	}
+	// tool.call payloads use raw JSON bytes for `input` (the LLM's
+	// tool-call arguments). `any` would marshal these to a base64
+	// array; convert them to json.RawMessage so they pass through
+	// the JSON encoder untouched.
+	if wire.EventType(t) == wire.EventToolCall {
+		if bs, ok := raw["input"].([]byte); ok {
+			raw["input"] = json.RawMessage(bs)
+		}
+	}
 	// Round-trip through JSON to apply struct tags.
 	bytes, err := json.Marshal(raw)
 	if err != nil {

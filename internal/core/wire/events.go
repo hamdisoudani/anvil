@@ -17,6 +17,8 @@
 // Schema version: 1
 package wire
 
+import "encoding/json"
+
 // Canonical Anvil wire-protocol schema (Go side).
 //
 // This file is the SINGLE SOURCE OF TRUTH for the Go side of the
@@ -169,25 +171,29 @@ type SourcesFoundPayload struct {
 }
 
 // ToolCallPayload — agent decided to call a tool.
+// `Input` is json.RawMessage so it preserves the raw JSON bytes the
+// LLM produced (e.g. `{"color":"darkblue"}`) instead of being
+// re-marshaled to a base64 array by Go's `any` encoder.
 type ToolCallPayload struct {
-	Name   string `json:"name"`
-	Input  any    `json:"input"`
-	CallID string `json:"callId,omitempty"`
+	Name       string          `json:"name"`
+	Input      json.RawMessage `json:"input,omitempty"`
+	CallID     string          `json:"id"` // legacy event uses "id", not "callId"
+	IsFrontend bool            `json:"is_frontend,omitempty"`
 }
 
 // ToolResultPayload — tool returned.
 type ToolResultPayload struct {
 	Name   string `json:"name"`
-	CallID string `json:"callId,omitempty"`
+	CallID string `json:"id"` // match legacy "id" key for symmetry
 	Result any    `json:"result"`
 	Error  string `json:"error,omitempty"`
 }
 
 // FrontendCallPayload — browser-side tool requested.
 type FrontendCallPayload struct {
-	Name   string `json:"name"`
-	Input  any    `json:"input"`
-	CallID string `json:"callId"`
+	Name   string          `json:"name"`
+	Input  json.RawMessage `json:"input,omitempty"`
+	CallID string          `json:"id"` // match legacy "id" key
 }
 
 // SubagentStartPayload — delegated to sub-agent.
@@ -340,7 +346,7 @@ func NewAnswerEndEvent(sessionID, threadID, text, createdAt string, id int64) Ev
 	}
 }
 
-func NewToolCallEvent(sessionID, threadID, name, callID string, input any, createdAt string, id int64) Event {
+func NewToolCallEvent(sessionID, threadID, name, callID string, input json.RawMessage, createdAt string, id int64) Event {
 	return Event{
 		EventID:   id,
 		Type:      EventToolCall,
@@ -362,7 +368,7 @@ func NewToolResultEvent(sessionID, threadID, name, callID string, result any, er
 	}
 }
 
-func NewFrontendCallEvent(sessionID, threadID, name, callID string, input any, createdAt string, id int64) Event {
+func NewFrontendCallEvent(sessionID, threadID, name, callID string, input json.RawMessage, createdAt string, id int64) Event {
 	return Event{
 		EventID:   id,
 		Type:      EventFrontendCall,
